@@ -9,7 +9,7 @@ struct PDFCanvas: NSViewRepresentable {
         let view = PDFView()
         view.document = document
         view.autoScales = true
-        view.displayMode = .singlePageContinuous
+        view.displayMode = library.layoutMode.pdfDisplayMode
         view.displayDirection = .vertical
         view.displaysPageBreaks = true
         view.pageBreakMargins = NSEdgeInsets(top: 18, left: 30, bottom: 18, right: 30)
@@ -40,6 +40,7 @@ struct PDFCanvas: NSViewRepresentable {
     }
 
     func updateNSView(_ view: PDFView, context: Context) {
+        library.applyLayout(to: view)
         if view.document !== document {
             view.document = document
             if let page = document.page(at: library.currentPageIndex) { view.go(to: page) }

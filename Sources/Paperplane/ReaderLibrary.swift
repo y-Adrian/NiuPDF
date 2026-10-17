@@ -3,6 +3,30 @@ import PDFKit
 import PaperplaneCore
 import SwiftUI
 
+enum ReaderLayout: String, CaseIterable, Identifiable {
+    case continuous
+    case singlePage
+    case twoPage
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .continuous: "连续滚动"
+        case .singlePage: "单页"
+        case .twoPage: "双页连续"
+        }
+    }
+
+    var pdfDisplayMode: PDFDisplayMode {
+        switch self {
+        case .continuous: .singlePageContinuous
+        case .singlePage: .singlePage
+        case .twoPage: .twoUpContinuous
+        }
+    }
+}
+
 @MainActor
 final class ReaderLibrary: ObservableObject {
     @Published var document: PDFDocument?
@@ -16,6 +40,11 @@ final class ReaderLibrary: ObservableObject {
     @Published var focusSearch = false
     @Published var isSidebarVisible = true
     @Published var errorMessage: String?
+    @Published var layoutMode: ReaderLayout = ReaderLayout(
+        rawValue: UserDefaults.standard.string(forKey: "readerLayoutMode") ?? ""
+    ) ?? .continuous {
+        didSet { UserDefaults.standard.set(layoutMode.rawValue, forKey: "readerLayoutMode") }
+    }
 
     weak var pdfView: PDFView?
     private var scopedURL: URL?
@@ -138,6 +167,12 @@ final class ReaderLibrary: ObservableObject {
         guard let pdfView else { return }
         pdfView.scaleFactor = min(max(scale, pdfView.minScaleFactor), pdfView.maxScaleFactor)
         zoomScale = pdfView.scaleFactor
+    }
+
+    func applyLayout(to view: PDFView) {
+        if view.displayMode != layoutMode.pdfDisplayMode {
+            view.displayMode = layoutMode.pdfDisplayMode
+        }
     }
 
     func find(_ text: String) {

@@ -94,6 +94,16 @@ struct ReaderWindow: View {
             .disabled(library.document == nil)
             .help("高亮选中的文字")
 
+            Picker("页面布局", selection: $library.layoutMode) {
+                ForEach(ReaderLayout.allCases) { layout in
+                    Text(layout.title).tag(layout)
+                }
+            }
+            .pickerStyle(.menu)
+            .labelsHidden()
+            .help("页面布局")
+            .disabled(library.document == nil)
+
             Button { library.save() } label: {
                 Image(systemName: "square.and.arrow.down")
             }
