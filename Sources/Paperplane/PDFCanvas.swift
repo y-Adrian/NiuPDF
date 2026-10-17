@@ -174,7 +174,14 @@ private final class MarkupColorSwatchButton: NSButton {
             NSGraphicsContext.saveGraphicsState()
             shadow.set()
             NSColor.black.withAlphaComponent(0.55).setFill()
-            NSBezierPath(ovalIn: bounds.insetBy(dx: 5, dy: 5)).fill()
+            let diameter = max(0, min(bounds.width, bounds.height) - 10)
+            let circle = CGRect(
+                x: bounds.midX - diameter / 2,
+                y: bounds.midY - diameter / 2,
+                width: diameter,
+                height: diameter
+            )
+            NSBezierPath(ovalIn: circle).fill()
             NSGraphicsContext.restoreGraphicsState()
         }
         super.draw(dirtyRect)
