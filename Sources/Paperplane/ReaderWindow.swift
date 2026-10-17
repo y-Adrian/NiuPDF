@@ -116,6 +116,18 @@ struct ReaderWindow: View {
             .disabled(library.document == nil)
             .help("高亮选中的文字")
 
+            Button { library.underlineSelection() } label: {
+                Image(systemName: "underline")
+            }
+            .disabled(library.document == nil)
+            .help("为选中文字添加下划线")
+
+            Button { library.strikeOutSelection() } label: {
+                Image(systemName: "strikethrough")
+            }
+            .disabled(library.document == nil)
+            .help("为选中文字添加删除线")
+
             Picker("页面布局", selection: $library.layoutMode) {
                 ForEach(ReaderLayout.allCases) { layout in
                     Text(layout.title).tag(layout)

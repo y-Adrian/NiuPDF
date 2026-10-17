@@ -263,13 +263,25 @@ final class ReaderLibrary: ObservableObject {
     }
 
     func highlightSelection() {
+        addTextMarkup(type: .highlight, color: NSColor.systemYellow.withAlphaComponent(0.42), label: "高亮")
+    }
+
+    func underlineSelection() {
+        addTextMarkup(type: .underline, color: .systemBlue, label: "下划线")
+    }
+
+    func strikeOutSelection() {
+        addTextMarkup(type: .strikeOut, color: .systemRed, label: "删除线")
+    }
+
+    private func addTextMarkup(type: PDFAnnotationSubtype, color: NSColor, label: String) {
         guard let selection = pdfView?.currentSelection else { return }
         for page in selection.pages {
             let bounds = selection.bounds(for: page)
             guard !bounds.isNull, !bounds.isEmpty else { continue }
-            let annotation = PDFAnnotation(bounds: bounds, forType: .highlight, withProperties: nil)
-            annotation.color = NSColor.systemYellow.withAlphaComponent(0.42)
-            annotation.contents = "高亮"
+            let annotation = PDFAnnotation(bounds: bounds, forType: type, withProperties: nil)
+            annotation.color = color
+            annotation.contents = label
             page.addAnnotation(annotation)
         }
         pdfView?.setNeedsDisplay(pdfView?.bounds ?? .zero)
