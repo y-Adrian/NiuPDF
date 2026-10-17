@@ -3,33 +3,46 @@ import PDFKit
 import PaperplaneCore
 import SwiftUI
 
-/// Renders a compact speech bubble while keeping the PDF's standard `/Text`
-/// annotation type so other readers can still inspect and edit its contents.
+/// Renders a line-height-scaled triangle while keeping a standard `/Text`
+/// annotation so other readers can still inspect and edit its contents.
 final class CommentBubblePDFAnnotation: PDFAnnotation {
-    var isExpanded = false
+    var triangleHeight: CGFloat = 6
+    var expansionProgress: CGFloat = 0
 
     override func draw(with box: PDFDisplayBox, in context: CGContext) {
         let rect = bounds
         guard rect.width > 6, rect.height > 6 else { return }
 
-        let path = CGMutablePath()
-        if isExpanded {
-            path.move(to: CGPoint(x: rect.minX, y: rect.minY))
-            path.addLine(to: CGPoint(x: rect.maxX, y: rect.minY))
-            path.addLine(to: CGPoint(x: rect.midX, y: rect.maxY))
-        } else {
-            path.move(to: CGPoint(x: rect.minX, y: rect.maxY))
-            path.addLine(to: CGPoint(x: rect.maxX, y: rect.maxY))
-            path.addLine(to: CGPoint(x: rect.midX, y: rect.minY))
+        let height = min(triangleHeight, min(rect.height * 0.8, rect.width * 0.8 * sqrt(3) / 2))
+        let side = height * 2 / sqrt(3)
+        let center = CGPoint(x: rect.midX, y: rect.midY)
+        let angle = .pi * min(max(expansionProgress, 0), 1)
+        let cosine = cos(angle)
+        let sine = sin(angle)
+        func rotate(_ point: CGPoint) -> CGPoint {
+            let dx = point.x - center.x
+            let dy = point.y - center.y
+            return CGPoint(
+                x: center.x + dx * cosine - dy * sine,
+                y: center.y + dx * sine + dy * cosine
+            )
         }
+
+        let path = CGMutablePath()
+        path.move(to: rotate(CGPoint(x: center.x - side / 2, y: center.y + height / 3)))
+        path.addLine(to: rotate(CGPoint(x: center.x + side / 2, y: center.y + height / 3)))
+        path.addLine(to: rotate(CGPoint(x: center.x, y: center.y - height * 2 / 3)))
         path.closeSubpath()
 
         context.saveGState()
         context.setAllowsAntialiasing(true)
         context.setShouldAntialias(true)
         context.setFillColor(NSColor.systemYellow.cgColor)
+        context.setStrokeColor(NSColor(calibratedRed: 0.42, green: 0.30, blue: 0.08, alpha: 1).cgColor)
+        context.setLineWidth(max(0.45, height * 0.12))
+        context.setLineJoin(.round)
         context.addPath(path)
-        context.fillPath()
+        context.drawPath(using: .fillStroke)
         context.restoreGState()
     }
 }
@@ -462,11 +475,17 @@ final class ReaderLibrary: ObservableObject {
         if hasAnnotation(ofType: .text, in: selection) {
             removeAnnotations(ofType: .text, in: selection)
         } else {
+            let lineSelections = selection.selectionsByLine()
             for page in selection.pages {
                 let selectionBounds = selection.bounds(for: page)
                 guard !selectionBounds.isNull, !selectionBounds.isEmpty else { continue }
                 let noteBounds = commentIconBounds(for: selectionBounds, on: page)
                 let note = CommentBubblePDFAnnotation(bounds: noteBounds, forType: .text, withProperties: nil)
+                let lineBounds = lineSelections.first(where: { line in
+                    line.pages.contains(where: { $0 === page })
+                })?.bounds(for: page)
+                let rowHeight = lineBounds?.height ?? selectionBounds.height
+                note.triangleHeight = max(1, rowHeight * 0.25)
                 note.color = NSColor(calibratedRed: 0.96, green: 0.78, blue: 0.35, alpha: 1)
                 note.contents = ""
                 page.addAnnotation(note)
