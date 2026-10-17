@@ -29,9 +29,10 @@ struct ReaderWindow: View {
             }
         }
         .background(Color(nsColor: .windowBackgroundColor))
+        .onAppear { library.restoreLastDocument() }
         .onChange(of: library.currentPageIndex) { value in pageInput = "\(value + 1)" }
         .onDrop(of: [UTType.fileURL], isTargeted: $isDropTargeted, perform: handleDrop)
-        .alert("无法打开文件", isPresented: Binding(
+        .alert("操作失败", isPresented: Binding(
             get: { library.errorMessage != nil },
             set: { if !$0 { library.errorMessage = nil } }
         )) {

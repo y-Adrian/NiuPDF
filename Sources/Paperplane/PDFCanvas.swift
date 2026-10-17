@@ -22,6 +22,7 @@ struct PDFCanvas: NSViewRepresentable {
         view.maxScaleFactor = 5
         view.displaysAsBook = false
         library.pdfView = view
+        if let page = document.page(at: library.currentPageIndex) { view.go(to: page) }
 
         NotificationCenter.default.addObserver(
             context.coordinator,
@@ -39,7 +40,10 @@ struct PDFCanvas: NSViewRepresentable {
     }
 
     func updateNSView(_ view: PDFView, context: Context) {
-        if view.document !== document { view.document = document }
+        if view.document !== document {
+            view.document = document
+            if let page = document.page(at: library.currentPageIndex) { view.go(to: page) }
+        }
         if library.pdfView !== view { library.pdfView = view }
     }
 
@@ -55,7 +59,7 @@ struct PDFCanvas: NSViewRepresentable {
                   let document = view.document else { return }
             let index = document.index(for: page)
             Task { @MainActor in
-                library.currentPageIndex = index
+                library.updateCurrentPage(index)
                 library.pageCount = document.pageCount
             }
         }

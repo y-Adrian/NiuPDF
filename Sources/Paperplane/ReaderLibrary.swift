@@ -20,8 +20,33 @@ final class ReaderLibrary: ObservableObject {
     weak var pdfView: PDFView?
     private var scopedURL: URL?
     private var fileRevision: PDFFileRevision?
+    private var didAttemptRestore = false
+
+    private enum ReadingStateKey {
+        static let bookmark = "lastOpenedPDFBookmark"
+        static let pageIndex = "lastOpenedPDFPageIndex"
+    }
 
     var displayName: String { fileURL?.deletingPathExtension().lastPathComponent ?? "未打开文稿" }
+
+    func restoreLastDocument() {
+        guard !didAttemptRestore else { return }
+        didAttemptRestore = true
+        guard let bookmark = UserDefaults.standard.data(forKey: ReadingStateKey.bookmark) else { return }
+
+        do {
+            var isStale = false
+            let url = try URL(
+                resolvingBookmarkData: bookmark,
+                options: [.withSecurityScope],
+                relativeTo: nil,
+                bookmarkDataIsStale: &isStale
+            )
+            open(url, restoringLastDocument: true)
+        } catch {
+            errorMessage = "无法恢复最近打开的 PDF。请重新选择文件。\n\(error.localizedDescription)"
+        }
+    }
 
     func presentOpenPanel() {
         let panel = NSOpenPanel()
@@ -36,6 +61,10 @@ final class ReaderLibrary: ObservableObject {
     }
 
     func open(_ url: URL) {
+        open(url, restoringLastDocument: false)
+    }
+
+    private func open(_ url: URL, restoringLastDocument: Bool) {
         let didStartAccess = url.startAccessingSecurityScopedResource()
         let opened: (document: PDFDocument, revision: PDFFileRevision)
         do {
@@ -52,12 +81,17 @@ final class ReaderLibrary: ObservableObject {
         fileURL = url
         fileRevision = opened.revision
         pageCount = opened.document.pageCount
-        currentPageIndex = 0
+        let rememberedIndex = restoringLastDocument
+            ? UserDefaults.standard.integer(forKey: ReadingStateKey.pageIndex)
+            : 0
+        currentPageIndex = min(max(rememberedIndex, 0), max(opened.document.pageCount - 1, 0))
+        UserDefaults.standard.set(currentPageIndex, forKey: ReadingStateKey.pageIndex)
         searchText = ""
         searchResults = []
         searchResultIndex = 0
         errorMessage = nil
-        if let firstPage = opened.document.page(at: 0) { pdfView?.go(to: firstPage) }
+        if let page = opened.document.page(at: currentPageIndex) { pdfView?.go(to: page) }
+        persistSecurityScopedBookmark(for: url)
     }
 
     func goToPage(_ oneBasedPage: Int) {
@@ -66,6 +100,28 @@ final class ReaderLibrary: ObservableObject {
         guard let page = document.page(at: index) else { return }
         pdfView?.go(to: page)
         currentPageIndex = index
+        UserDefaults.standard.set(index, forKey: ReadingStateKey.pageIndex)
+    }
+
+    func updateCurrentPage(_ index: Int) {
+        guard document?.pageCount ?? 0 > 0 else { return }
+        let safeIndex = min(max(index, 0), (document?.pageCount ?? 1) - 1)
+        currentPageIndex = safeIndex
+        UserDefaults.standard.set(safeIndex, forKey: ReadingStateKey.pageIndex)
+    }
+
+    private func persistSecurityScopedBookmark(for url: URL) {
+        do {
+            let bookmark = try url.bookmarkData(
+                options: [.withSecurityScope],
+                includingResourceValuesForKeys: nil,
+                relativeTo: nil
+            )
+            UserDefaults.standard.set(bookmark, forKey: ReadingStateKey.bookmark)
+        } catch {
+            // The document remains usable in this session even if macOS cannot create a bookmark.
+            errorMessage = "文稿已打开，但无法记住它以供下次恢复。\n\(error.localizedDescription)"
+        }
     }
 
     func stepPage(_ delta: Int) {
