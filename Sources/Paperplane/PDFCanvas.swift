@@ -6,7 +6,8 @@ struct PDFCanvas: NSViewRepresentable {
     let document: PDFDocument
 
     func makeNSView(context: Context) -> PDFView {
-        let view = PDFView()
+        let view = MarkupPDFView()
+        view.readerLibrary = library
         view.document = document
         view.autoScales = true
         view.displayMode = library.layoutMode.pdfDisplayMode
@@ -72,6 +73,33 @@ struct PDFCanvas: NSViewRepresentable {
             Task { @MainActor in library.updateZoomScale(view.scaleFactor) }
         }
     }
+}
+
+/// Adds native PDF text markup actions to the selected text's contextual menu.
+private final class MarkupPDFView: PDFView {
+    weak var readerLibrary: ReaderLibrary?
+
+    override func menu(for event: NSEvent) -> NSMenu? {
+        guard let selection = currentSelection,
+              !(selection.string ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        else { return super.menu(for: event) }
+
+        let menu = NSMenu()
+        menu.addItem(actionItem("高亮", action: #selector(addHighlight)))
+        menu.addItem(actionItem("下划线", action: #selector(addUnderline)))
+        menu.addItem(actionItem("删除线", action: #selector(addStrikeOut)))
+        return menu
+    }
+
+    private func actionItem(_ title: String, action: Selector) -> NSMenuItem {
+        let item = NSMenuItem(title: title, action: action, keyEquivalent: "")
+        item.target = self
+        return item
+    }
+
+    @objc private func addHighlight() { readerLibrary?.highlightSelection() }
+    @objc private func addUnderline() { readerLibrary?.underlineSelection() }
+    @objc private func addStrikeOut() { readerLibrary?.strikeOutSelection() }
 }
 
 struct ThumbnailSidebar: View {
