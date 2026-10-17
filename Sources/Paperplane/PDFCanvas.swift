@@ -240,21 +240,26 @@ private final class MarkupPDFView: PDFView {
 }
 
 private struct MarkupColorPickerPopover: View {
-    @State private var selectedColor: Color
+    @State private var selectedColor: NSColor
     @State private var hexText: String
     @State private var validationMessage: String?
 
     let onApply: (MarkupColor) -> Void
 
     init(initialColor: MarkupColor, onApply: @escaping (MarkupColor) -> Void) {
-        _selectedColor = State(initialValue: Color(nsColor: initialColor.nsColor))
+        _selectedColor = State(initialValue: initialColor.nsColor)
         _hexText = State(initialValue: "#\(initialColor.hex)")
         self.onApply = onApply
     }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            ColorPicker("选择颜色", selection: $selectedColor, supportsOpacity: false)
+            HStack {
+                Text("选择颜色")
+                Spacer()
+                MarkupColorWell(color: $selectedColor)
+                    .frame(width: 44, height: 24)
+            }
             HStack(spacing: 8) {
                 TextField("#RRGGBB", text: $hexText)
                     .textFieldStyle(.roundedBorder)
@@ -271,8 +276,7 @@ private struct MarkupColorPickerPopover: View {
         .padding(14)
         .frame(width: 260)
         .onChange(of: selectedColor) { newColor in
-            let color = NSColor(newColor).usingColorSpace(.deviceRGB)
-            if let color {
+            if let color = newColor.usingColorSpace(.deviceRGB) {
                 hexText = String(
                     format: "#%02X%02X%02X",
                     Int((color.redComponent * 255).rounded()),
@@ -282,6 +286,11 @@ private struct MarkupColorPickerPopover: View {
                 validationMessage = nil
             }
         }
+        .onChange(of: hexText) { newValue in
+            guard let color = MarkupColor.custom(hex: newValue) else { return }
+            selectedColor = color.nsColor
+            validationMessage = nil
+        }
     }
 
     private func applyHexColor() {
@@ -289,8 +298,37 @@ private struct MarkupColorPickerPopover: View {
             validationMessage = "请输入有效的六位十六进制颜色，例如 #3A7BD5。"
             return
         }
-        selectedColor = Color(nsColor: color.nsColor)
+        selectedColor = color.nsColor
         onApply(color)
+    }
+}
+
+private struct MarkupColorWell: NSViewRepresentable {
+    @Binding var color: NSColor
+
+    func makeCoordinator() -> Coordinator { Coordinator(self) }
+
+    func makeNSView(context: Context) -> NSColorWell {
+        let colorWell = NSColorWell(frame: .zero)
+        colorWell.color = color
+        colorWell.target = context.coordinator
+        colorWell.action = #selector(Coordinator.colorChanged(_:))
+        return colorWell
+    }
+
+    func updateNSView(_ colorWell: NSColorWell, context: Context) {
+        context.coordinator.parent = self
+        if !colorWell.color.isEqual(color) { colorWell.color = color }
+    }
+
+    final class Coordinator: NSObject {
+        var parent: MarkupColorWell
+
+        init(_ parent: MarkupColorWell) { self.parent = parent }
+
+        @objc func colorChanged(_ sender: NSColorWell) {
+            parent.color = sender.color
+        }
     }
 }
 
