@@ -421,6 +421,9 @@ final class ReaderLibrary: ObservableObject {
         let note = PDFAnnotation(bounds: noteBounds, forType: .text, withProperties: nil)
         note.iconType = .comment
         note.color = style.color.withAlphaComponent(style.opacity)
+        let border = PDFBorder()
+        border.lineWidth = style.borderWidth
+        note.border = border
         note.contents = ""
         page.addAnnotation(note)
         pdfView?.clearSelection()
@@ -558,32 +561,25 @@ final class ReaderLibrary: ObservableObject {
 
     private struct NoteAnnotationStyle {
         // PDF page-space points. Increase/decrease this to tune the rendered icon.
-        var iconSize: CGFloat = 18
+        var iconSize: CGFloat = 10
         // Keep the icon close to the selection, with a small gap and page inset.
-        var selectionGap: CGFloat = 3
+        var selectionGap: CGFloat = 1
         var pageInset: CGFloat = 3
         // Applied to the standard note annotation color; 1 is fully opaque.
-        var opacity: CGFloat = 0.9
+        var opacity: CGFloat = 1
+        // A fine border keeps the small icon distinct without a heavy dark frame.
+        var borderWidth: CGFloat = 0.6
         var color: NSColor = .systemYellow
 
         func bounds(for selection: CGRect, on page: PDFPage) -> CGRect {
             let pageBounds = page.bounds(for: .mediaBox)
-            let xBefore = selection.minX - iconSize - selectionGap
-            let xAfter = selection.maxX + selectionGap
             let minX = pageBounds.minX + pageInset
             let maxX = pageBounds.maxX - iconSize - pageInset
-            let x: CGFloat
-            if xBefore >= minX {
-                x = xBefore
-            } else if xAfter <= maxX {
-                x = xAfter
-            } else {
-                x = min(max(selection.minX, minX), maxX)
-            }
-
+            // Place at the selection's upper-right, shifting inward only at a page edge.
+            let x = min(max(selection.maxX + selectionGap, minX), maxX)
             let minY = pageBounds.minY + pageInset
             let maxY = pageBounds.maxY - iconSize - pageInset
-            // Align the icon with the first selected line while keeping it on-page.
+            // PDF page coordinates increase upward; maxY aligns the icon to the top.
             let y = min(max(selection.maxY - iconSize, minY), maxY)
             return CGRect(x: x, y: y, width: iconSize, height: iconSize)
         }
