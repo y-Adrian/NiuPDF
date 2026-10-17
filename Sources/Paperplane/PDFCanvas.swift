@@ -192,9 +192,6 @@ private final class MarkupColorSwatchButton: NSButton {
 private final class MarkupPDFView: PDFView {
     weak var readerLibrary: ReaderLibrary?
     private var contextMenuSelection: PDFSelection?
-    private var nativeAddNoteAction: Selector?
-    private var nativeAddNoteTarget: AnyObject?
-    private var nativeAddNoteTargetIsSelf = false
 
     override func menu(for event: NSEvent) -> NSMenu? {
         guard let selection = selectionForContextMenu(at: event),
@@ -208,53 +205,29 @@ private final class MarkupPDFView: PDFView {
         setCurrentSelection(selection, animate: false)
         let menu = super.menu(for: event) ?? NSMenu()
         removeLegacyMarkupItems(from: menu)
-        let nativeNoteItem = takeNativeNoteItem(from: menu)
-        if nativeNoteItem?.title.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() == "add note",
-           let action = nativeNoteItem?.action {
-            nativeAddNoteAction = action
-            nativeAddNoteTargetIsSelf = nativeNoteItem?.target === self
-            nativeAddNoteTarget = nativeAddNoteTargetIsSelf ? nil : nativeNoteItem?.target
-        }
+        removeNativeNoteItems(from: menu)
         var editingItems: [NSMenuItem] = []
 
         editingItems.append(colorRow(iconStyle: .highlight, accessibilityPrefix: "高亮", iconAction: #selector(highlightFromIcon), colorAction: #selector(applyHighlightFromRow(_:)), selectedColor: readerLibrary?.selectedHighlightColor ?? .yellow))
         editingItems.append(colorRow(iconStyle: .underline, accessibilityPrefix: "下划线", iconAction: #selector(toggleUnderlineFromIcon), colorAction: #selector(applyUnderlineFromRow(_:)), selectedColor: readerLibrary?.selectedUnderlineColor ?? .yellow))
         editingItems.append(colorRow(iconStyle: .strikethrough, accessibilityPrefix: "删除线", iconAction: #selector(toggleStrikeOutFromIcon), colorAction: #selector(applyStrikeOutFromRow(_:)), selectedColor: readerLibrary?.selectedStrikeOutColor ?? .yellow))
         let hasNote = readerLibrary?.hasNoteAnnotation(in: selection) == true
-        if hasNote {
-            if let nativeNoteItem,
-               nativeNoteItem.title.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() == "remove note" {
-                editingItems.append(nativeNoteItem)
-            } else {
-                editingItems.append(actionItem("Remove Note", action: #selector(removeSelectedNote)))
-            }
-        } else if let nativeNoteItem,
-                  nativeNoteItem.title.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() == "add note" {
-            editingItems.append(nativeNoteItem)
-        } else if let cachedItem = cachedNativeAddNoteItem() {
-            editingItems.append(cachedItem)
-        }
+        editingItems.append(actionItem(hasNote ? "Remove Note" : "Add Note", action: #selector(toggleNoteAnnotation)))
         editingItems.append(.separator())
 
         for item in editingItems.reversed() { menu.insertItem(item, at: 0) }
         return menu
     }
 
-    private func takeNativeNoteItem(from menu: NSMenu) -> NSMenuItem? {
+    private func removeNativeNoteItems(from menu: NSMenu) {
         let noteTitles: Set<String> = ["add note", "remove note"]
-        guard let index = menu.items.firstIndex(where: {
-            noteTitles.contains($0.title.trimmingCharacters(in: .whitespacesAndNewlines).lowercased())
-        }) else { return nil }
-        let item = menu.item(at: index)
-        menu.removeItem(at: index)
-        return item
-    }
-
-    private func cachedNativeAddNoteItem() -> NSMenuItem? {
-        guard let action = nativeAddNoteAction else { return nil }
-        let item = NSMenuItem(title: "Add Note", action: action, keyEquivalent: "")
-        item.target = nativeAddNoteTargetIsSelf ? self : nativeAddNoteTarget
-        return item
+        for index in menu.items.indices.reversed() {
+            let item = menu.items[index]
+            if let submenu = item.submenu { removeNativeNoteItems(from: submenu) }
+            if noteTitles.contains(item.title.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()) {
+                menu.removeItem(at: index)
+            }
+        }
     }
 
     private func selectionForContextMenu(at event: NSEvent) -> PDFSelection? {
@@ -346,9 +319,9 @@ private final class MarkupPDFView: PDFView {
         readerLibrary?.applyHighlight(color: MarkupColor.allCases[sender.tag], to: contextMenuSelection)
         updateSelectedSwatch(in: sender)
     }
-    @objc private func removeSelectedNote() {
+    @objc private func toggleNoteAnnotation() {
         guard let contextMenuSelection else { return }
-        readerLibrary?.removeNoteAnnotations(in: contextMenuSelection)
+        readerLibrary?.toggleNoteAnnotation(in: contextMenuSelection)
     }
     @objc private func toggleUnderlineFromIcon() {
         guard let contextMenuSelection else { return }

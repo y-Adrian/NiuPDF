@@ -401,6 +401,32 @@ final class ReaderLibrary: ObservableObject {
         refreshPDFView()
     }
 
+    /// Creates a standards-compliant PDF `/Text` note. Keep these values together so
+    /// the note's size, placement, and translucency can be tuned without changing
+    /// selection or persistence behavior.
+    func toggleNoteAnnotation(in selection: PDFSelection) {
+        if hasNoteAnnotation(in: selection) {
+            removeAnnotations(ofType: .text, in: selection)
+            pdfView?.clearSelection()
+            refreshPDFView()
+            return
+        }
+
+        guard let page = selection.pages.first else { return }
+        let selectionBounds = selection.bounds(for: page)
+        guard !selectionBounds.isNull, !selectionBounds.isEmpty else { return }
+
+        let style = NoteAnnotationStyle()
+        let noteBounds = style.bounds(for: selectionBounds, on: page)
+        let note = PDFAnnotation(bounds: noteBounds, forType: .text, withProperties: nil)
+        note.iconType = .comment
+        note.color = style.color.withAlphaComponent(style.opacity)
+        note.contents = ""
+        page.addAnnotation(note)
+        pdfView?.clearSelection()
+        refreshPDFView()
+    }
+
     func hasNoteAnnotation(in selection: PDFSelection) -> Bool {
         return hasAnnotation(ofType: .text, in: selection)
     }
@@ -528,6 +554,39 @@ final class ReaderLibrary: ObservableObject {
 
     private func refreshPDFView() {
         pdfView?.setNeedsDisplay(pdfView?.bounds ?? .zero)
+    }
+
+    private struct NoteAnnotationStyle {
+        // PDF page-space points. Increase/decrease this to tune the rendered icon.
+        var iconSize: CGFloat = 18
+        // Keep the icon close to the selection, with a small gap and page inset.
+        var selectionGap: CGFloat = 3
+        var pageInset: CGFloat = 3
+        // Applied to the standard note annotation color; 1 is fully opaque.
+        var opacity: CGFloat = 0.9
+        var color: NSColor = .systemYellow
+
+        func bounds(for selection: CGRect, on page: PDFPage) -> CGRect {
+            let pageBounds = page.bounds(for: .mediaBox)
+            let xBefore = selection.minX - iconSize - selectionGap
+            let xAfter = selection.maxX + selectionGap
+            let minX = pageBounds.minX + pageInset
+            let maxX = pageBounds.maxX - iconSize - pageInset
+            let x: CGFloat
+            if xBefore >= minX {
+                x = xBefore
+            } else if xAfter <= maxX {
+                x = xAfter
+            } else {
+                x = min(max(selection.minX, minX), maxX)
+            }
+
+            let minY = pageBounds.minY + pageInset
+            let maxY = pageBounds.maxY - iconSize - pageInset
+            // Align the icon with the first selected line while keeping it on-page.
+            let y = min(max(selection.maxY - iconSize, minY), maxY)
+            return CGRect(x: x, y: y, width: iconSize, height: iconSize)
+        }
     }
 
     func save() {
