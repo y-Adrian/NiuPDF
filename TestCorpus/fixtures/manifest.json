@@ -44,6 +44,14 @@
       "notes": "Contains one standard PDF Highlight annotation."
     },
     {
+      "filename": "markup-regression.pdf",
+      "bytes": 2013,
+      "sha256": "7560ffd80032c01caac74cfc30059b9584783bf574fcf24142dc521afe9a349e",
+      "type": "markup-regression",
+      "pages": 1,
+      "notes": "Synthetic selectable text plus an existing highlight, underline, and independent note; used to verify color changes and non-destructive toggles."
+    },
+    {
       "filename": "malformed-xref.pdf",
       "bytes": 60,
       "sha256": "4383e01d364346fdc379367b0ea527566cf5084066ab6e54684828620f6f88bf",

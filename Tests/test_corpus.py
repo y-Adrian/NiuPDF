@@ -61,6 +61,23 @@ class CorpusTests(unittest.TestCase):
         self.assertEqual(annotation.get("/Subtype"), "/Highlight")
         self.assertTrue(annotation.get("/QuadPoints"))
 
+    def test_markup_regression_fixture_has_selectable_text_and_independent_annotations(self) -> None:
+        reader = PdfReader(FIXTURES / "markup-regression.pdf", strict=True)
+        self.assertEqual(len(reader.pages), 1)
+        text = reader.pages[0].extract_text() or ""
+        self.assertIn("five highlight colors", text)
+        self.assertIn("toggle off", text)
+        self.assertIn("independent from highlights", text)
+
+        annotations = [item.get_object() for item in reader.pages[0].get("/Annots", [])]
+        subtypes = [item.get("/Subtype") for item in annotations]
+        self.assertCountEqual(subtypes, ["/Highlight", "/Underline", "/Text"])
+        self.assertTrue(next(item for item in annotations if item.get("/Subtype") == "/Highlight").get("/QuadPoints"))
+        self.assertEqual(
+            next(item for item in annotations if item.get("/Subtype") == "/Text").get("/Contents"),
+            "Preserve this independent note",
+        )
+
     def test_malformed_fixture_is_rejected_in_strict_mode(self) -> None:
         with self.assertRaises(Exception):
             PdfReader(FIXTURES / "malformed-xref.pdf", strict=True)

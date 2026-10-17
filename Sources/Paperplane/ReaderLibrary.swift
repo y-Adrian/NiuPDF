@@ -329,26 +329,108 @@ final class ReaderLibrary: ObservableObject {
     }
 
     func highlightSelection() {
-        addTextMarkup(type: .highlight, color: selectedMarkupColor.nsColor.withAlphaComponent(0.42))
+        applyHighlight(color: selectedMarkupColor)
     }
 
     func underlineSelection() {
-        addTextMarkup(type: .underline, color: selectedMarkupColor.nsColor)
+        toggleTextMarkup(type: .underline, color: selectedMarkupColor.nsColor)
     }
 
     func strikeOutSelection() {
-        addTextMarkup(type: .strikeOut, color: selectedMarkupColor.nsColor)
+        toggleTextMarkup(type: .strikeOut, color: selectedMarkupColor.nsColor)
     }
 
-    private func addTextMarkup(type: PDFAnnotationSubtype, color: NSColor) {
-        guard let selection = pdfView?.currentSelection else { return }
+    func applyHighlight(color: MarkupColor) {
+        guard let selection = selectedText else { return }
+        removeAnnotations(ofType: .highlight, in: selection)
+        addTextMarkup(type: .highlight, color: color.nsColor.withAlphaComponent(0.42), selection: selection)
+    }
+
+    func removeHighlights() {
+        guard let selection = selectedText else { return }
+        removeAnnotations(ofType: .highlight, in: selection)
+        refreshPDFView()
+    }
+
+    func toggleNoteAnnotation() {
+        guard let selection = selectedText else { return }
+        if hasAnnotation(ofType: .text, in: selection) {
+            removeAnnotations(ofType: .text, in: selection)
+        } else {
+            for page in selection.pages {
+                let selectionBounds = selection.bounds(for: page)
+                guard !selectionBounds.isNull, !selectionBounds.isEmpty else { continue }
+                let noteBounds = CGRect(x: selectionBounds.minX, y: selectionBounds.maxY - 18, width: 18, height: 18)
+                let note = PDFAnnotation(bounds: noteBounds, forType: .text, withProperties: nil)
+                note.contents = ""
+                page.addAnnotation(note)
+            }
+        }
+        refreshPDFView()
+    }
+
+    func hasNoteAnnotationForSelection() -> Bool {
+        guard let selection = selectedText else { return false }
+        return hasAnnotation(ofType: .text, in: selection)
+    }
+
+    private var selectedText: PDFSelection? {
+        guard let selection = pdfView?.currentSelection,
+              !(selection.string ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return nil }
+        return selection
+    }
+
+    private func toggleTextMarkup(type: PDFAnnotationSubtype, color: NSColor) {
+        guard let selection = selectedText else { return }
+        if hasAnnotation(ofType: type, in: selection) {
+            removeAnnotations(ofType: type, in: selection)
+        } else {
+            addTextMarkup(type: type, color: color, selection: selection)
+        }
+        refreshPDFView()
+    }
+
+    private func addTextMarkup(type: PDFAnnotationSubtype, color: NSColor, selection: PDFSelection) {
+        for line in selection.selectionsByLine() {
+            for page in line.pages {
+                let bounds = line.bounds(for: page)
+                guard !bounds.isNull, !bounds.isEmpty else { continue }
+                let annotation = PDFAnnotation(bounds: bounds, forType: type, withProperties: nil)
+                annotation.quadrilateralPoints = [
+                    NSValue(point: CGPoint(x: 0, y: bounds.height)),
+                    NSValue(point: CGPoint(x: bounds.width, y: bounds.height)),
+                    NSValue(point: CGPoint(x: 0, y: 0)),
+                    NSValue(point: CGPoint(x: bounds.width, y: 0))
+                ]
+                annotation.color = color
+                page.addAnnotation(annotation)
+            }
+        }
+        refreshPDFView()
+    }
+
+    private func hasAnnotation(ofType type: PDFAnnotationSubtype, in selection: PDFSelection) -> Bool {
+        selection.pages.contains { page in
+            let bounds = selection.bounds(for: page)
+            return page.annotations.contains { annotation in
+                annotation.type == type.rawValue.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
+                    && annotation.bounds.intersects(bounds)
+            }
+        }
+    }
+
+    private func removeAnnotations(ofType type: PDFAnnotationSubtype, in selection: PDFSelection) {
         for page in selection.pages {
             let bounds = selection.bounds(for: page)
-            guard !bounds.isNull, !bounds.isEmpty else { continue }
-            let annotation = PDFAnnotation(bounds: bounds, forType: type, withProperties: nil)
-            annotation.color = color
-            page.addAnnotation(annotation)
+            for annotation in page.annotations where
+                annotation.type == type.rawValue.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
+                    && annotation.bounds.intersects(bounds) {
+                page.removeAnnotation(annotation)
+            }
         }
+    }
+
+    private func refreshPDFView() {
         pdfView?.setNeedsDisplay(pdfView?.bounds ?? .zero)
     }
 

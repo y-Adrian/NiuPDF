@@ -120,6 +120,39 @@ def make_annotated_document(path: Path) -> None:
     source.unlink()
 
 
+def make_markup_regression_document(path: Path) -> None:
+    source = FIXTURES / "_markup-regression-source.pdf"
+    pdf = canvas.Canvas(str(source), pagesize=letter, invariant=1)
+    pdf.setFont("Helvetica", 14)
+    pdf.drawString(72, 720, "Select this text to check five highlight colors.")
+    pdf.drawString(72, 680, "Existing underline must toggle off without damage.")
+    pdf.drawString(72, 640, "Existing note stays independent from highlights.")
+    pdf.save()
+
+    writer = PdfWriter(clone_from=str(source))
+    writer.add_annotation(page_number=0, annotation={
+        "/Type": "/Annot", "/Subtype": "/Highlight",
+        "/Rect": [70, 714, 375, 734],
+        "/QuadPoints": [70, 734, 375, 734, 70, 714, 375, 714],
+        "/C": [1, 1, 0], "/CA": 0.42, "/F": 4,
+        "/Contents": "Existing highlight",
+    })
+    writer.add_annotation(page_number=0, annotation={
+        "/Type": "/Annot", "/Subtype": "/Underline",
+        "/Rect": [70, 674, 389, 694],
+        "/QuadPoints": [70, 694, 389, 694, 70, 674, 389, 674],
+        "/C": [0, 0, 1], "/F": 4, "/Contents": "Existing underline",
+    })
+    writer.add_annotation(page_number=0, annotation={
+        "/Type": "/Annot", "/Subtype": "/Text",
+        "/Rect": [72, 630, 92, 650], "/Name": "/Comment",
+        "/F": 4, "/Contents": "Preserve this independent note",
+    })
+    with path.open("wb") as stream:
+        writer.write(stream)
+    source.unlink()
+
+
 def make_malformed_document(path: Path) -> None:
     # A truncated catalog reference with no xref or trailer; intentionally invalid.
     path.write_bytes(b"%PDF-1.7\n1 0 obj\n<< /Type /Catalog /Pages 999 0 R >>\nendobj\n")
@@ -133,6 +166,7 @@ def main() -> None:
         "encrypted-fixture.pdf": make_encrypted_document,
         "cjk-mixed-layout.pdf": make_cjk_document,
         "existing-annotation.pdf": make_annotated_document,
+        "markup-regression.pdf": make_markup_regression_document,
         "malformed-xref.pdf": make_malformed_document,
     }
     for name, maker in makers.items():
@@ -144,6 +178,7 @@ def main() -> None:
         "encrypted-fixture.pdf": {"type": "encrypted", "pages": 1, "user_password": "reader-test", "notes": "Synthetic; owner password is owner-test."},
         "cjk-mixed-layout.pdf": {"type": "cjk-and-rotated-text", "pages": 1, "notes": "Uses standard CID fonts; includes CJK and rotated text."},
         "existing-annotation.pdf": {"type": "existing-annotations", "pages": 1, "notes": "Contains one standard PDF Highlight annotation."},
+        "markup-regression.pdf": {"type": "markup-regression", "pages": 1, "notes": "Synthetic selectable text plus an existing highlight, underline, and independent note; used to verify color changes and non-destructive toggles."},
         "malformed-xref.pdf": {"type": "malformed-pdf", "pages": None, "notes": "Intentionally truncated invalid PDF; parser should fail safely."},
     }
     manifest = {
