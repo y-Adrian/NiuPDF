@@ -217,6 +217,7 @@ private final class MarkupPDFView: PDFView, NSPopoverDelegate {
 
         let popover = NSPopover()
         popover.behavior = .semitransient
+        popover.appearance = NSAppearance(named: .aqua)
         popover.delegate = self
         popover.contentViewController = CommentNotePopoverViewController(note: note) { [weak self, weak note] contents in
             note?.contents = contents

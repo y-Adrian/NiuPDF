@@ -16,7 +16,7 @@ final class CommentBubblePDFAnnotation: PDFAnnotation {
         context.setAllowsAntialiasing(true)
         context.setShouldAntialias(true)
         let progress = min(max(expansionProgress, 0), 1)
-        let scale = 1 + progress * 0.08
+        let scale = 0.98 + progress * 0.04
         context.translateBy(x: rect.midX, y: rect.midY)
         context.scaleBy(x: scale, y: scale)
         context.translateBy(x: -rect.midX, y: -rect.midY)
@@ -42,7 +42,7 @@ final class CommentBubblePDFAnnotation: PDFAnnotation {
         context.fillPath()
 
         context.setStrokeColor(NSColor.white.cgColor)
-        context.setLineWidth(max(0.8, rect.width * 0.07))
+        context.setLineWidth(max(1, rect.width * 0.075))
         context.setLineCap(.round)
         context.move(to: CGPoint(x: bubbleRect.minX + bubbleRect.width * 0.24, y: bubbleRect.midY + bubbleRect.height * 0.13))
         context.addLine(to: CGPoint(x: bubbleRect.maxX - bubbleRect.width * 0.24, y: bubbleRect.midY + bubbleRect.height * 0.13))
@@ -68,9 +68,14 @@ final class CommentNotePopoverViewController: NSViewController, NSTextViewDelega
 
     override func loadView() {
         let container = NSView(frame: NSRect(x: 0, y: 0, width: 280, height: 160))
+        container.appearance = NSAppearance(named: .aqua)
+        container.wantsLayer = true
+        container.layer?.backgroundColor = NSColor.white.cgColor
+
         let scrollView = NSScrollView(frame: NSRect(x: 8, y: 8, width: 264, height: 144))
         scrollView.hasVerticalScroller = true
         scrollView.borderType = .noBorder
+        scrollView.drawsBackground = false
         textView.frame = NSRect(x: 0, y: 0, width: 264, height: 144)
         textView.minSize = NSSize(width: 0, height: 144)
         textView.maxSize = NSSize(width: CGFloat.greatestFiniteMagnitude, height: CGFloat.greatestFiniteMagnitude)
@@ -79,6 +84,9 @@ final class CommentNotePopoverViewController: NSViewController, NSTextViewDelega
         textView.autoresizingMask = [.width]
         textView.textContainer?.widthTracksTextView = true
         textView.font = .systemFont(ofSize: 13)
+        textView.appearance = NSAppearance(named: .aqua)
+        textView.drawsBackground = false
+        textView.textColor = .black
         textView.string = note.contents ?? ""
         textView.delegate = self
         scrollView.documentView = textView
@@ -496,7 +504,6 @@ final class ReaderLibrary: ObservableObject {
                 guard !selectionBounds.isNull, !selectionBounds.isEmpty else { continue }
                 let noteBounds = commentIconBounds(for: selectionBounds, on: page)
                 let note = CommentBubblePDFAnnotation(bounds: noteBounds, forType: .text, withProperties: nil)
-                note.iconType = .comment
                 note.color = .systemRed
                 note.contents = ""
                 page.addAnnotation(note)
