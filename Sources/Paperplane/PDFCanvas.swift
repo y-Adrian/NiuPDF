@@ -136,10 +136,7 @@ private final class MarkupToolIconButton: NSButton {
 }
 
 private final class MarkupColorSwatchButton: NSButton {
-    private let isSelectedColor: Bool
-
-    init(selected: Bool, target: AnyObject, action: Selector) {
-        isSelectedColor = selected
+    init(target: AnyObject, action: Selector) {
         super.init(frame: .zero)
         title = ""
         self.target = target
@@ -156,15 +153,6 @@ private final class MarkupColorSwatchButton: NSButton {
     required init?(coder: NSCoder) { nil }
 
     override var intrinsicContentSize: NSSize { NSSize(width: 24, height: 24) }
-
-    override func draw(_ dirtyRect: NSRect) {
-        super.draw(dirtyRect)
-        guard isSelectedColor else { return }
-        NSColor.white.withAlphaComponent(0.95).setStroke()
-        let ring = NSBezierPath(ovalIn: bounds.insetBy(dx: 2.5, dy: 2.5))
-        ring.lineWidth = 1.5
-        ring.stroke()
-    }
 }
 
 /// Adds native PDF text markup actions to the selected text's contextual menu.
@@ -259,9 +247,9 @@ private final class MarkupPDFView: PDFView, NSPopoverDelegate {
         removeLegacyMarkupItems(from: menu)
         var editingItems: [NSMenuItem] = []
 
-        editingItems.append(colorRow(iconStyle: .highlight, accessibilityPrefix: "高亮", iconAction: #selector(highlightFromIcon), colorAction: #selector(applyHighlightFromRow(_:)), selectedColor: readerLibrary?.selectedHighlightColor ?? .yellow))
-        editingItems.append(colorRow(iconStyle: .underline, accessibilityPrefix: "下划线", iconAction: #selector(toggleUnderlineFromIcon), colorAction: #selector(applyUnderlineFromRow(_:)), selectedColor: readerLibrary?.selectedUnderlineColor ?? .yellow))
-        editingItems.append(colorRow(iconStyle: .strikethrough, accessibilityPrefix: "删除线", iconAction: #selector(toggleStrikeOutFromIcon), colorAction: #selector(applyStrikeOutFromRow(_:)), selectedColor: readerLibrary?.selectedStrikeOutColor ?? .yellow))
+        editingItems.append(colorRow(iconStyle: .highlight, accessibilityPrefix: "高亮", iconAction: #selector(highlightFromIcon), colorAction: #selector(applyHighlightFromRow(_:))))
+        editingItems.append(colorRow(iconStyle: .underline, accessibilityPrefix: "下划线", iconAction: #selector(toggleUnderlineFromIcon), colorAction: #selector(applyUnderlineFromRow(_:))))
+        editingItems.append(colorRow(iconStyle: .strikethrough, accessibilityPrefix: "删除线", iconAction: #selector(toggleStrikeOutFromIcon), colorAction: #selector(applyStrikeOutFromRow(_:))))
         let noteTitle = readerLibrary?.hasNoteAnnotationForSelection() == true ? "移除标注" : "添加标注"
         editingItems.append(actionItem(noteTitle, action: #selector(toggleNote)))
         editingItems.append(.separator())
@@ -317,7 +305,6 @@ private final class MarkupPDFView: PDFView, NSPopoverDelegate {
         accessibilityPrefix: String,
         iconAction: Selector,
         colorAction: Selector,
-        selectedColor: MarkupColor,
     ) -> NSMenuItem {
         let stack = NSStackView()
         stack.orientation = .horizontal
@@ -334,7 +321,7 @@ private final class MarkupPDFView: PDFView, NSPopoverDelegate {
         stack.addArrangedSubview(iconButton)
 
         for (index, color) in MarkupColor.allCases.enumerated() {
-            let button = MarkupColorSwatchButton(selected: color == selectedColor, target: self, action: colorAction)
+            let button = MarkupColorSwatchButton(target: self, action: colorAction)
             button.tag = index
             button.contentTintColor = color.nsColor
             button.toolTip = "\(color.title)\(accessibilityPrefix)"
