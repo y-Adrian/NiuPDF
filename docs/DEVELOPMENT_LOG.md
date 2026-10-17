@@ -40,7 +40,7 @@ Checklist 创建：2026-10-17
 
 分发约束：Mac App Store；阶段 2 起按 App Sandbox、security-scoped URL/bookmark 与 NSFileCoordinator 设计。偏好确认日期：2026-10-17。
 
-提交：阶段 1A `3a40057`；阶段 1B 待提交。
+提交：阶段 1A `3a40057`；阶段 1B 探针 `d893beb`、回归执行器 `be98c86`。Preview / Chrome 人工检查和真实 PDFView 滚动帧率仍待完成。
 
 ## 阶段 2A：协调读取与安全保存核心
 
@@ -52,7 +52,28 @@ Checklist 创建：2026-10-17
 - [x] 用合成副本验证正常保存和外部冲突保护，不触碰语料原件：创建 2026-10-17；完成 2026-10-17。
 - [x] 构建、执行回归语料检查并检查补丁：创建 2026-10-17；完成 2026-10-17。
 
+提交：`810016d`（协调读取、外部变更保护、临时写入与校验）
+
+## 阶段 2B-1：Mac App Store 沙盒应用包
+
+Checklist 创建：2026-10-17
+
+- [x] 建立可在 Xcode 中构建的原生 macOS `.app` 工程和 PDF 文档类型声明：创建 2026-10-17；完成 2026-10-17。
+- [x] 启用 App Sandbox，仅申请用户选择文件的读写权限：创建 2026-10-17；完成 2026-10-17。
+- [x] 构建 Debug / Release 应用包并检查嵌入框架、签名与沙盒授权；Release 不含 `get-task-allow`：创建 2026-10-17；完成 2026-10-17。
+- [x] 更新开发者文档，说明 SwiftPM 开发运行与 `.app` 发行构建及占位 Bundle ID：创建 2026-10-17；完成 2026-10-17。
+- [x] 检查补丁并复用已通过的阶段 2A 核心测试和 PDF 回归语料：创建 2026-10-17；完成 2026-10-17。
+
 提交：待提交
+
+## 阶段 2B-2：沙盒应用启动与授权实测
+
+Checklist 创建：2026-10-17
+
+- [ ] 在可用 macOS 图形会话启动 Xcode 构建的应用并确认主窗口：创建 2026-10-17；完成：待完成。
+- [ ] 在应用内选择合成 PDF，确认沙盒授权可读取，保存只写该合成副本：创建 2026-10-17；完成：待完成。
+
+提交：待完成
 
 ## 后续阶段 checklist 模板
 
@@ -72,3 +93,4 @@ Checklist 创建：阶段启动时填写实际日期。
 | 2026-10-17 | Xcode SwiftPM 默认 sandbox 在 Codex 受限环境里无法启动 | 默认 `swift build` 报 `sandbox_apply: Operation not permitted` | 在此受限执行环境中以 `swift build --disable-sandbox --scratch-path /private/tmp/paperplane-build` 构建；不把该限制混同为产品运行时沙盒 |
 | 2026-10-17 | 受限命令环境中的 `NSFileCoordinator` 对 `/private/tmp` 文件返回 Cocoa 256 | 安全文件协调回归无法在该限制下执行 | 在获批的 Xcode 测试执行环境中运行 `swift test`；两项临时副本保存测试通过，不降级产品协调访问 |
 | 2026-10-17 | 打开时计算整份 PDF 的 SHA-256 会增加大文件 I/O | 可能影响很大的文件首次打开响应 | 目前保留强内容校验以避免静默覆盖；需在大文件性能阶段测量并评估后台计算/保存前等待方案 |
+| 2026-10-17 | 当前执行环境的 Launch Services 对 Xcode 生成的 `.app` 返回 `kLSNoExecutableErr`，尽管 bundle 内可执行文件存在、签名有效且 `CFBundleExecutable` 正确 | 无法在此会话完成 GUI 启动与沙盒授权交互验证 | Xcode 构建、嵌入框架、签名和 entitlement 均已检查；需在用户的图形会话打开工程运行，并完成合成 PDF 授权验证 |

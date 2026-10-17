@@ -11,8 +11,12 @@ A small native macOS PDF reader built with SwiftUI and PDFKit. It takes inspirat
 - Highlight selected text
 - Save PDF annotations with `⌘S`
 
-## Run
+## Build and run
 
-Requires macOS 13 or later and the Swift command-line tools. From this folder, run `swift run`.
+Requires macOS 13 or later and Xcode 27. Open `Paperplane.xcodeproj`, select the `Paperplane` scheme, and run it. The Xcode target builds a sandboxed macOS app with access to files explicitly selected by the user.
+
+For command-line development, `swift run` still builds the Swift package executable. That executable is not the App Store sandboxed app. Run the Xcode target when checking sandbox behavior or preparing an app bundle.
+
+The current bundle identifier, `app.paperplane.reader`, is a development placeholder. Set the identifier to one registered by the publisher before distribution and configure the matching signing team in Xcode.
 
 The project uses Apple's built-in PDFKit framework and contains no third-party runtime dependencies.
