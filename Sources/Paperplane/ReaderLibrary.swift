@@ -9,34 +9,27 @@ final class CommentBubblePDFAnnotation: PDFAnnotation {
     var isExpanded = false
 
     override func draw(with box: PDFDisplayBox, in context: CGContext) {
-        let rect = bounds.standardized
+        let rect = bounds
         guard rect.width > 6, rect.height > 6 else { return }
 
-        let side = min(rect.width * 0.76, rect.height * 0.76)
-        let height = side * sqrt(3) / 2
-        let centerX = rect.midX
-        let centerY = rect.midY
         let path = CGMutablePath()
         if isExpanded {
-            path.move(to: CGPoint(x: centerX, y: centerY + height * 0.58))
-            path.addLine(to: CGPoint(x: centerX - side / 2, y: centerY - height * 0.42))
-            path.addLine(to: CGPoint(x: centerX + side / 2, y: centerY - height * 0.42))
+            path.move(to: CGPoint(x: rect.minX, y: rect.minY))
+            path.addLine(to: CGPoint(x: rect.maxX, y: rect.minY))
+            path.addLine(to: CGPoint(x: rect.midX, y: rect.maxY))
         } else {
-            path.move(to: CGPoint(x: centerX, y: centerY - height * 0.58))
-            path.addLine(to: CGPoint(x: centerX - side / 2, y: centerY + height * 0.42))
-            path.addLine(to: CGPoint(x: centerX + side / 2, y: centerY + height * 0.42))
+            path.move(to: CGPoint(x: rect.minX, y: rect.maxY))
+            path.addLine(to: CGPoint(x: rect.maxX, y: rect.maxY))
+            path.addLine(to: CGPoint(x: rect.midX, y: rect.minY))
         }
         path.closeSubpath()
 
         context.saveGState()
         context.setAllowsAntialiasing(true)
         context.setShouldAntialias(true)
-        context.setFillColor(NSColor(calibratedRed: 1, green: 0.80, blue: 0.20, alpha: 1).cgColor)
-        context.setStrokeColor(NSColor(calibratedRed: 0.45, green: 0.31, blue: 0.08, alpha: 1).cgColor)
-        context.setLineWidth(0.8)
-        context.setLineJoin(.round)
+        context.setFillColor(NSColor.systemYellow.cgColor)
         context.addPath(path)
-        context.drawPath(using: .fillStroke)
+        context.fillPath()
         context.restoreGState()
     }
 }
