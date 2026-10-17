@@ -87,7 +87,7 @@ private final class MarkupPDFView: PDFView {
         let menu = super.menu(for: event) ?? NSMenu()
         var editingItems: [NSMenuItem] = []
 
-        editingItems.append(colorRow(icon: "eraser", accessibilityPrefix: "高亮", iconAction: #selector(removeHighlights), colorAction: #selector(applyHighlightFromRow(_:)), selectedColor: readerLibrary?.selectedHighlightColor ?? .yellow))
+        editingItems.append(colorRow(icon: "eraser", accessibilityPrefix: "高亮", iconAction: #selector(removeHighlights), colorAction: #selector(applyHighlightFromRow(_:)), selectedColor: readerLibrary?.selectedHighlightColor ?? .yellow, leadingSymbol: "highlighter"))
 
         let noteTitle = readerLibrary?.hasNoteAnnotationForSelection() == true ? "移除标注" : "添加标注"
         editingItems.append(actionItem(noteTitle, action: #selector(toggleNote)))
@@ -110,7 +110,8 @@ private final class MarkupPDFView: PDFView {
         accessibilityPrefix: String,
         iconAction: Selector,
         colorAction: Selector,
-        selectedColor: MarkupColor
+        selectedColor: MarkupColor,
+        leadingSymbol: String? = nil
     ) -> NSMenuItem {
         let stack = NSStackView()
         stack.orientation = .horizontal
@@ -118,6 +119,16 @@ private final class MarkupPDFView: PDFView {
         stack.distribution = .fill
         stack.spacing = 8
         stack.edgeInsets = NSEdgeInsets(top: 2, left: 10, bottom: 2, right: 10)
+
+        if let leadingSymbol {
+            let imageView = NSImageView()
+            imageView.image = NSImage(systemSymbolName: leadingSymbol, accessibilityDescription: accessibilityPrefix)
+            imageView.imageScaling = .scaleProportionallyUpOrDown
+            imageView.contentTintColor = NSColor.secondaryLabelColor
+            imageView.setFrameSize(NSSize(width: 24, height: 24))
+            imageView.setAccessibilityLabel(accessibilityPrefix)
+            stack.addArrangedSubview(imageView)
+        }
 
         let iconButton = NSButton(title: "", target: self, action: iconAction)
         iconButton.image = NSImage(systemSymbolName: icon, accessibilityDescription: accessibilityPrefix)
@@ -148,7 +159,9 @@ private final class MarkupPDFView: PDFView {
             stack.addArrangedSubview(button)
         }
 
-        stack.frame = NSRect(x: 0, y: 0, width: 210, height: 28)
+        let controlCount = MarkupColor.allCases.count + 1 + (leadingSymbol == nil ? 0 : 1)
+        let rowWidth = CGFloat(controlCount * 24 + (controlCount - 1) * 8 + 20)
+        stack.frame = NSRect(x: 0, y: 0, width: rowWidth, height: 28)
         let item = NSMenuItem()
         item.view = stack
         return item
