@@ -234,6 +234,7 @@ struct ReaderWindow: View {
 private struct SearchField: View {
     @EnvironmentObject private var library: ReaderLibrary
     @FocusState private var isFocused: Bool
+    @State private var pendingSearch: Task<Void, Never>?
 
     var body: some View {
         HStack(spacing: 6) {
@@ -241,7 +242,18 @@ private struct SearchField: View {
             TextField("在文稿中查找", text: $library.searchText)
                 .textFieldStyle(.plain)
                 .focused($isFocused)
-                .onSubmit { library.find(library.searchText) }
+                .onSubmit {
+                    pendingSearch?.cancel()
+                    library.find(library.searchText)
+                }
+                .onChange(of: library.searchText) { value in
+                    pendingSearch?.cancel()
+                    pendingSearch = Task { @MainActor in
+                        try? await Task.sleep(nanoseconds: 250_000_000)
+                        guard !Task.isCancelled else { return }
+                        library.find(value)
+                    }
+                }
                 .onChange(of: library.focusSearch) { value in
                     if value { isFocused = true; library.focusSearch = false }
                 }
