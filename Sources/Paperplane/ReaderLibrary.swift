@@ -474,9 +474,16 @@ final class ReaderLibrary: ObservableObject {
                 let bounds = line.bounds(for: page)
                 guard !bounds.isNull, !bounds.isEmpty else { continue }
                 let annotation = PDFAnnotation(bounds: bounds, forType: type, withProperties: nil)
+                if type == .underline {
+                    let border = PDFBorder()
+                    border.lineWidth = 2
+                    annotation.border = border
+                }
+                let strikeOffset = type == .strikeOut ? min(3, bounds.height * 0.2) : 0
+                let quadTop = max(0, bounds.height - strikeOffset)
                 annotation.quadrilateralPoints = [
-                    NSValue(point: CGPoint(x: 0, y: bounds.height)),
-                    NSValue(point: CGPoint(x: bounds.width, y: bounds.height)),
+                    NSValue(point: CGPoint(x: 0, y: quadTop)),
+                    NSValue(point: CGPoint(x: bounds.width, y: quadTop)),
                     NSValue(point: CGPoint(x: 0, y: 0)),
                     NSValue(point: CGPoint(x: bounds.width, y: 0))
                 ]
