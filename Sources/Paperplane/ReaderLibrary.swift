@@ -524,12 +524,6 @@ final class ReaderLibrary: ObservableObject {
         return hasAnnotation(ofType: .text, in: selection)
     }
 
-    func hasTextMarkupAnnotation(in selection: PDFSelection) -> Bool {
-        [PDFAnnotationSubtype.highlight, .underline, .strikeOut].contains { type in
-            hasAnnotation(ofType: type, in: selection)
-        }
-    }
-
     private var selectedText: PDFSelection? {
         guard let selection = pdfView?.currentSelection,
               !(selection.string ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return nil }

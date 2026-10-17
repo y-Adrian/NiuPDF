@@ -192,6 +192,8 @@ private final class MarkupColorSwatchButton: NSButton {
 private final class MarkupPDFView: PDFView, NSPopoverDelegate {
     weak var readerLibrary: ReaderLibrary?
     private var contextMenuSelection: PDFSelection?
+    private var nativeAddNoteAction: Selector?
+    private weak var nativeAddNoteTarget: AnyObject?
     private var notePopover: NSPopover?
     private weak var expandedNote: CommentBubblePDFAnnotation?
     private var noteIconAnimationTimer: Timer?
@@ -279,21 +281,31 @@ private final class MarkupPDFView: PDFView, NSPopoverDelegate {
         let menu = super.menu(for: event) ?? NSMenu()
         removeLegacyMarkupItems(from: menu)
         let nativeNoteItem = takeNativeNoteItem(from: menu)
+        if nativeNoteItem?.title.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() == "add note",
+           let action = nativeNoteItem?.action {
+            nativeAddNoteAction = action
+            nativeAddNoteTarget = nativeNoteItem?.target
+        }
         var editingItems: [NSMenuItem] = []
 
         editingItems.append(colorRow(iconStyle: .highlight, accessibilityPrefix: "高亮", iconAction: #selector(highlightFromIcon), colorAction: #selector(applyHighlightFromRow(_:)), selectedColor: readerLibrary?.selectedHighlightColor ?? .yellow))
         editingItems.append(colorRow(iconStyle: .underline, accessibilityPrefix: "下划线", iconAction: #selector(toggleUnderlineFromIcon), colorAction: #selector(applyUnderlineFromRow(_:)), selectedColor: readerLibrary?.selectedUnderlineColor ?? .yellow))
         editingItems.append(colorRow(iconStyle: .strikethrough, accessibilityPrefix: "删除线", iconAction: #selector(toggleStrikeOutFromIcon), colorAction: #selector(applyStrikeOutFromRow(_:)), selectedColor: readerLibrary?.selectedStrikeOutColor ?? .yellow))
         let hasNote = readerLibrary?.hasNoteAnnotation(in: selection) == true
-        let hasMarkup = readerLibrary?.hasTextMarkupAnnotation(in: selection) == true
         if hasNote {
-            editingItems.append(actionItem("Remove Note", action: #selector(toggleNote)))
-        } else if hasMarkup {
-            if let nativeNoteItem {
+            if let nativeNoteItem,
+               nativeNoteItem.title.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() == "remove note" {
                 editingItems.append(nativeNoteItem)
             } else {
-                editingItems.append(actionItem("Add Note", action: #selector(toggleNote)))
+                editingItems.append(actionItem("Remove Note", action: #selector(toggleNote)))
             }
+        } else if let nativeNoteItem,
+                  nativeNoteItem.title.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() == "add note" {
+            editingItems.append(nativeNoteItem)
+        } else if let nativeItem = cachedNativeAddNoteItem() {
+            editingItems.append(nativeItem)
+        } else {
+            editingItems.append(actionItem("Add Note", action: #selector(toggleNote)))
         }
         editingItems.append(.separator())
 
@@ -308,6 +320,13 @@ private final class MarkupPDFView: PDFView, NSPopoverDelegate {
         }) else { return nil }
         let item = menu.item(at: index)
         menu.removeItem(at: index)
+        return item
+    }
+
+    private func cachedNativeAddNoteItem() -> NSMenuItem? {
+        guard let nativeAddNoteAction else { return nil }
+        let item = NSMenuItem(title: "Add Note", action: nativeAddNoteAction, keyEquivalent: "")
+        item.target = nativeAddNoteTarget
         return item
     }
 
