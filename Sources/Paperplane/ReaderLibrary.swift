@@ -561,9 +561,9 @@ final class ReaderLibrary: ObservableObject {
 
     private struct NoteAnnotationStyle {
         // PDF page-space points. Increase/decrease this to tune the rendered icon.
-        var iconSize: CGFloat = 10
+        var iconSize: CGFloat = 14
         // Keep the icon close to the selection, with a small gap and page inset.
-        var selectionGap: CGFloat = 1
+        var selectionGap: CGFloat = 2
         var pageInset: CGFloat = 3
         // Applied to the standard note annotation color; 1 is fully opaque.
         var opacity: CGFloat = 1
@@ -579,8 +579,8 @@ final class ReaderLibrary: ObservableObject {
             let x = min(max(selection.maxX + selectionGap, minX), maxX)
             let minY = pageBounds.minY + pageInset
             let maxY = pageBounds.maxY - iconSize - pageInset
-            // PDF page coordinates increase upward; maxY aligns the icon to the top.
-            let y = min(max(selection.maxY - iconSize, minY), maxY)
+            // Page coordinates increase upward: put the icon above the selection.
+            let y = min(max(selection.maxY + selectionGap, minY), maxY)
             return CGRect(x: x, y: y, width: iconSize, height: iconSize)
         }
     }
