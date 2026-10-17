@@ -6,13 +6,24 @@ let package = Package(
     platforms: [.macOS(.v13)],
     products: [
         .executable(name: "Paperplane", targets: ["Paperplane"]),
+        .library(name: "PaperplaneCore", targets: ["PaperplaneCore"]),
         .executable(name: "PDFKitInteropProbe", targets: ["PDFKitInteropProbe"]),
         .executable(name: "PDFKitPerformanceProbe", targets: ["PDFKitPerformanceProbe"])
     ],
     targets: [
         .executableTarget(
             name: "Paperplane",
+            dependencies: ["PaperplaneCore"],
             path: "Sources/Paperplane"
+        ),
+        .target(
+            name: "PaperplaneCore",
+            path: "Sources/PaperplaneCore"
+        ),
+        .testTarget(
+            name: "PaperplaneCoreTests",
+            dependencies: ["PaperplaneCore"],
+            path: "Tests/PaperplaneCoreTests"
         ),
         .executableTarget(
             name: "PDFKitInteropProbe",

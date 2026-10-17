@@ -1,5 +1,6 @@
 import AppKit
 import PDFKit
+import PaperplaneCore
 import SwiftUI
 
 @MainActor
@@ -18,6 +19,7 @@ final class ReaderLibrary: ObservableObject {
 
     weak var pdfView: PDFView?
     private var scopedURL: URL?
+    private var fileRevision: PDFFileRevision?
 
     var displayName: String { fileURL?.deletingPathExtension().lastPathComponent ?? "未打开文稿" }
 
@@ -34,28 +36,28 @@ final class ReaderLibrary: ObservableObject {
     }
 
     func open(_ url: URL) {
-        if let scopedURL {
-            scopedURL.stopAccessingSecurityScopedResource()
-            self.scopedURL = nil
-        }
-
         let didStartAccess = url.startAccessingSecurityScopedResource()
-        guard let pdf = PDFDocument(url: url) else {
+        let opened: (document: PDFDocument, revision: PDFFileRevision)
+        do {
+            opened = try SafePDFFileStore.read(from: url)
+        } catch {
             if didStartAccess { url.stopAccessingSecurityScopedResource() }
-            errorMessage = "无法打开这个 PDF 文件。请确认文件未损坏，或尝试其他文件。"
+            errorMessage = error.localizedDescription
             return
         }
 
+        if let scopedURL { scopedURL.stopAccessingSecurityScopedResource() }
         if didStartAccess { scopedURL = url }
-        document = pdf
+        document = opened.document
         fileURL = url
-        pageCount = pdf.pageCount
+        fileRevision = opened.revision
+        pageCount = opened.document.pageCount
         currentPageIndex = 0
         searchText = ""
         searchResults = []
         searchResultIndex = 0
         errorMessage = nil
-        if let firstPage = pdf.page(at: 0) { pdfView?.go(to: firstPage) }
+        if let firstPage = opened.document.page(at: 0) { pdfView?.go(to: firstPage) }
     }
 
     func goToPage(_ oneBasedPage: Int) {
@@ -122,10 +124,15 @@ final class ReaderLibrary: ObservableObject {
     }
 
     func save() {
-        guard let document, let fileURL else { return }
-        guard document.write(to: fileURL) else {
-            errorMessage = "无法保存到原文件。请检查文件权限，或将 PDF 另存到其他位置。"
-            return
+        guard let document, let fileURL, let fileRevision else { return }
+        do {
+            self.fileRevision = try SafePDFFileStore.save(
+                document,
+                to: fileURL,
+                expectedRevision: fileRevision
+            )
+        } catch {
+            errorMessage = error.localizedDescription
         }
     }
 }
