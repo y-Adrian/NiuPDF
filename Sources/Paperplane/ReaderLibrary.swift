@@ -3,6 +3,54 @@ import PDFKit
 import PaperplaneCore
 import SwiftUI
 
+/// Renders a compact speech bubble while keeping the PDF's standard `/Text`
+/// annotation type so other readers can still inspect and edit its contents.
+final class CommentBubblePDFAnnotation: PDFAnnotation {
+    override func draw(with box: PDFDisplayBox, in context: CGContext) {
+        let rect = bounds.standardized
+        guard rect.width > 6, rect.height > 6 else { return }
+
+        let bubble = CGRect(
+            x: rect.minX + rect.width * 0.08,
+            y: rect.minY + rect.height * 0.22,
+            width: rect.width * 0.84,
+            height: rect.height * 0.70
+        )
+        let radius = min(bubble.width, bubble.height) * 0.22
+        let tail = CGMutablePath()
+        tail.move(to: CGPoint(x: bubble.minX + bubble.width * 0.28, y: bubble.minY + 1))
+        tail.addLine(to: CGPoint(x: bubble.minX + bubble.width * 0.15, y: rect.minY + 1))
+        tail.addLine(to: CGPoint(x: bubble.minX + bubble.width * 0.48, y: bubble.minY + 1))
+        tail.closeSubpath()
+
+        let body = CGPath(roundedRect: bubble, cornerWidth: radius, cornerHeight: radius, transform: nil)
+        let path = CGMutablePath()
+        path.addPath(body)
+        path.addPath(tail)
+
+        context.saveGState()
+        context.setFillColor(NSColor(calibratedRed: 1, green: 0.88, blue: 0.48, alpha: 1).cgColor)
+        context.setStrokeColor(NSColor(calibratedRed: 0.56, green: 0.38, blue: 0.08, alpha: 1).cgColor)
+        context.setLineWidth(max(0.65, rect.width * 0.045))
+        context.addPath(path)
+        context.drawPath(using: .fillStroke)
+
+        let dotRadius = max(0.55, min(rect.width, rect.height) * 0.045)
+        let centerY = bubble.midY + bubble.height * 0.02
+        for fraction in [CGFloat(0.34), 0.50, 0.66] {
+            let dot = CGRect(
+                x: bubble.minX + bubble.width * fraction - dotRadius,
+                y: centerY - dotRadius,
+                width: dotRadius * 2,
+                height: dotRadius * 2
+            )
+            context.setFillColor(NSColor(calibratedRed: 0.42, green: 0.32, blue: 0.12, alpha: 1).cgColor)
+            context.fillEllipse(in: dot)
+        }
+        context.restoreGState()
+    }
+}
+
 enum ReaderLayout: String, CaseIterable, Identifiable {
     case continuous
     case singlePage
@@ -397,7 +445,7 @@ final class ReaderLibrary: ObservableObject {
                 let selectionBounds = selection.bounds(for: page)
                 guard !selectionBounds.isNull, !selectionBounds.isEmpty else { continue }
                 let noteBounds = commentIconBounds(for: selectionBounds, on: page)
-                let note = PDFAnnotation(bounds: noteBounds, forType: .text, withProperties: nil)
+                let note = CommentBubblePDFAnnotation(bounds: noteBounds, forType: .text, withProperties: nil)
                 note.iconType = .comment
                 note.color = NSColor(calibratedRed: 0.96, green: 0.78, blue: 0.35, alpha: 1)
                 note.contents = ""
