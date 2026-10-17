@@ -278,17 +278,34 @@ private final class MarkupPDFView: PDFView, NSPopoverDelegate {
         setCurrentSelection(selection, animate: false)
         let menu = super.menu(for: event) ?? NSMenu()
         removeLegacyMarkupItems(from: menu)
+        let nativeNoteItem = takeNativeNoteItem(from: menu)
         var editingItems: [NSMenuItem] = []
 
         editingItems.append(colorRow(iconStyle: .highlight, accessibilityPrefix: "高亮", iconAction: #selector(highlightFromIcon), colorAction: #selector(applyHighlightFromRow(_:)), selectedColor: readerLibrary?.selectedHighlightColor ?? .yellow))
         editingItems.append(colorRow(iconStyle: .underline, accessibilityPrefix: "下划线", iconAction: #selector(toggleUnderlineFromIcon), colorAction: #selector(applyUnderlineFromRow(_:)), selectedColor: readerLibrary?.selectedUnderlineColor ?? .yellow))
         editingItems.append(colorRow(iconStyle: .strikethrough, accessibilityPrefix: "删除线", iconAction: #selector(toggleStrikeOutFromIcon), colorAction: #selector(applyStrikeOutFromRow(_:)), selectedColor: readerLibrary?.selectedStrikeOutColor ?? .yellow))
-        let noteTitle = readerLibrary?.hasNoteAnnotationForSelection() == true ? "移除标注" : "添加标注"
-        editingItems.append(actionItem(noteTitle, action: #selector(toggleNote)))
+        let hasNote = readerLibrary?.hasNoteAnnotationForSelection() == true
+        if hasNote {
+            editingItems.append(actionItem("Remove Note", action: #selector(toggleNote)))
+        } else if let nativeNoteItem {
+            editingItems.append(nativeNoteItem)
+        } else {
+            editingItems.append(actionItem("Add Note", action: #selector(toggleNote)))
+        }
         editingItems.append(.separator())
 
         for item in editingItems.reversed() { menu.insertItem(item, at: 0) }
         return menu
+    }
+
+    private func takeNativeNoteItem(from menu: NSMenu) -> NSMenuItem? {
+        let noteTitles: Set<String> = ["add note", "remove note"]
+        guard let index = menu.items.firstIndex(where: {
+            noteTitles.contains($0.title.trimmingCharacters(in: .whitespacesAndNewlines).lowercased())
+        }) else { return nil }
+        let item = menu.item(at: index)
+        menu.removeItem(at: index)
+        return item
     }
 
     private func selectionForContextMenu(at event: NSEvent) -> PDFSelection? {
