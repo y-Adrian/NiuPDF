@@ -87,14 +87,12 @@ private final class MarkupPDFView: PDFView {
         let menu = super.menu(for: event) ?? NSMenu()
         var editingItems: [NSMenuItem] = []
 
-        let highlightRow = NSMenuItem()
-        highlightRow.view = makeHighlightColorRow()
-        editingItems.append(highlightRow)
+        editingItems.append(colorRow(icon: "eraser", accessibilityPrefix: "高亮", iconAction: #selector(removeHighlights), colorAction: #selector(applyHighlightFromRow(_:)), selectedColor: readerLibrary?.selectedHighlightColor ?? .yellow))
 
         let noteTitle = readerLibrary?.hasNoteAnnotationForSelection() == true ? "移除标注" : "添加标注"
         editingItems.append(actionItem(noteTitle, action: #selector(toggleNote)))
-        editingItems.append(actionItem("下划线", action: #selector(addUnderline)))
-        editingItems.append(actionItem("删除线", action: #selector(addStrikeOut)))
+        editingItems.append(colorRow(icon: "underline", accessibilityPrefix: "下划线", iconAction: #selector(toggleUnderlineFromIcon), colorAction: #selector(applyUnderlineFromRow(_:)), selectedColor: readerLibrary?.selectedUnderlineColor ?? .yellow))
+        editingItems.append(colorRow(icon: "strikethrough", accessibilityPrefix: "删除线", iconAction: #selector(toggleStrikeOutFromIcon), colorAction: #selector(applyStrikeOutFromRow(_:)), selectedColor: readerLibrary?.selectedStrikeOutColor ?? .yellow))
         editingItems.append(.separator())
 
         for item in editingItems.reversed() { menu.insertItem(item, at: 0) }
@@ -107,40 +105,53 @@ private final class MarkupPDFView: PDFView {
         return item
     }
 
-    private func makeHighlightColorRow() -> NSView {
+    private func colorRow(
+        icon: String,
+        accessibilityPrefix: String,
+        iconAction: Selector,
+        colorAction: Selector,
+        selectedColor: MarkupColor
+    ) -> NSMenuItem {
         let stack = NSStackView()
         stack.orientation = .horizontal
         stack.alignment = .centerY
         stack.distribution = .fill
-        stack.spacing = 7
-        stack.edgeInsets = NSEdgeInsets(top: 2, left: 12, bottom: 2, right: 12)
+        stack.spacing = 8
+        stack.edgeInsets = NSEdgeInsets(top: 2, left: 10, bottom: 2, right: 10)
 
-        let title = NSTextField(labelWithString: "高亮")
-        title.font = .menuFont(ofSize: 0)
-        stack.addArrangedSubview(title)
-
-        let removeButton = NSButton(title: "", target: self, action: #selector(removeHighlights))
-        removeButton.image = NSImage(systemSymbolName: "eraser", accessibilityDescription: "移除高亮")
-        removeButton.imagePosition = .imageOnly
-        removeButton.isBordered = false
-        removeButton.toolTip = "移除高亮"
-        removeButton.setAccessibilityLabel("移除高亮")
-        stack.addArrangedSubview(removeButton)
+        let iconButton = NSButton(title: "", target: self, action: iconAction)
+        iconButton.image = NSImage(systemSymbolName: icon, accessibilityDescription: accessibilityPrefix)
+        iconButton.imagePosition = .imageOnly
+        iconButton.isBordered = false
+        iconButton.setFrameSize(NSSize(width: 24, height: 24))
+        iconButton.toolTip = accessibilityPrefix == "高亮" ? "移除高亮" : "使用当前颜色切换\(accessibilityPrefix)"
+        iconButton.setAccessibilityLabel(iconButton.toolTip ?? accessibilityPrefix)
+        stack.addArrangedSubview(iconButton)
 
         for (index, color) in MarkupColor.allCases.enumerated() {
-            let button = NSButton(title: "", target: self, action: #selector(applyHighlightFromRow(_:)))
+            let button = NSButton(title: "", target: self, action: colorAction)
             button.tag = index
             button.image = NSImage(systemSymbolName: "circle.fill", accessibilityDescription: color.title)
             button.imagePosition = .imageOnly
             button.isBordered = false
             button.contentTintColor = color.nsColor
-            button.toolTip = color.title
-            button.setAccessibilityLabel("\(color.title)高亮")
+            button.setFrameSize(NSSize(width: 24, height: 24))
+            button.toolTip = "\(color.title)\(accessibilityPrefix)"
+            button.setAccessibilityLabel(button.toolTip ?? color.title)
+            if color == selectedColor {
+                button.layer = CALayer()
+                button.wantsLayer = true
+                button.layer?.borderColor = NSColor.secondaryLabelColor.cgColor
+                button.layer?.borderWidth = 1
+                button.layer?.cornerRadius = 12
+            }
             stack.addArrangedSubview(button)
         }
 
-        stack.frame = NSRect(x: 0, y: 0, width: 220, height: 28)
-        return stack
+        stack.frame = NSRect(x: 0, y: 0, width: 210, height: 28)
+        let item = NSMenuItem()
+        item.view = stack
+        return item
     }
 
     @objc private func removeHighlights() { readerLibrary?.removeHighlights() }
@@ -149,8 +160,16 @@ private final class MarkupPDFView: PDFView {
         readerLibrary?.applyHighlight(color: MarkupColor.allCases[sender.tag])
     }
     @objc private func toggleNote() { readerLibrary?.toggleNoteAnnotation() }
-    @objc private func addUnderline() { readerLibrary?.underlineSelection() }
-    @objc private func addStrikeOut() { readerLibrary?.strikeOutSelection() }
+    @objc private func toggleUnderlineFromIcon() { readerLibrary?.underlineSelection() }
+    @objc private func applyUnderlineFromRow(_ sender: NSButton) {
+        guard MarkupColor.allCases.indices.contains(sender.tag) else { return }
+        readerLibrary?.applyUnderline(color: MarkupColor.allCases[sender.tag])
+    }
+    @objc private func toggleStrikeOutFromIcon() { readerLibrary?.strikeOutSelection() }
+    @objc private func applyStrikeOutFromRow(_ sender: NSButton) {
+        guard MarkupColor.allCases.indices.contains(sender.tag) else { return }
+        readerLibrary?.applyStrikeOut(color: MarkupColor.allCases[sender.tag])
+    }
 }
 
 struct ThumbnailSidebar: View {

@@ -77,7 +77,9 @@ final class ReaderLibrary: ObservableObject {
     @Published var isCaseSensitiveSearch = false
     @Published var isWholeWordSearch = false
     @Published var isRegularExpressionSearch = false
-    @Published var selectedMarkupColor: MarkupColor = .yellow
+    @Published var selectedHighlightColor: MarkupColor = .yellow
+    @Published var selectedUnderlineColor: MarkupColor = .yellow
+    @Published var selectedStrikeOutColor: MarkupColor = .yellow
     @Published var focusSearch = false
     @Published var isSidebarVisible = true
     @Published var sidebarMode: SidebarMode = .thumbnails
@@ -329,22 +331,34 @@ final class ReaderLibrary: ObservableObject {
     }
 
     func highlightSelection() {
-        applyHighlight(color: selectedMarkupColor)
+        applyHighlight(color: selectedHighlightColor)
     }
 
     func underlineSelection() {
-        toggleTextMarkup(type: .underline, color: selectedMarkupColor.nsColor)
+        applyUnderline(color: selectedUnderlineColor)
     }
 
     func strikeOutSelection() {
-        toggleTextMarkup(type: .strikeOut, color: selectedMarkupColor.nsColor)
+        applyStrikeOut(color: selectedStrikeOutColor)
     }
 
     func applyHighlight(color: MarkupColor) {
         guard let selection = selectedText else { return }
-        selectedMarkupColor = color
+        selectedHighlightColor = color
         removeAnnotations(ofType: .highlight, in: selection)
         addTextMarkup(type: .highlight, color: color.nsColor.withAlphaComponent(0.42), selection: selection)
+    }
+
+    func applyUnderline(color: MarkupColor) {
+        guard selectedText != nil else { return }
+        selectedUnderlineColor = color
+        toggleTextMarkup(type: .underline, color: color.nsColor)
+    }
+
+    func applyStrikeOut(color: MarkupColor) {
+        guard selectedText != nil else { return }
+        selectedStrikeOutColor = color
+        toggleTextMarkup(type: .strikeOut, color: color.nsColor)
     }
 
     func removeHighlights() {
@@ -383,11 +397,15 @@ final class ReaderLibrary: ObservableObject {
 
     private func toggleTextMarkup(type: PDFAnnotationSubtype, color: NSColor) {
         guard let selection = selectedText else { return }
-        if hasAnnotation(ofType: type, in: selection) {
+        let existing = annotations(ofType: type, in: selection)
+        if !existing.isEmpty {
             removeAnnotations(ofType: type, in: selection)
-        } else {
-            addTextMarkup(type: type, color: color, selection: selection)
+            if existing.allSatisfy({ colorsMatch($0.color, color) }) {
+                refreshPDFView()
+                return
+            }
         }
+        addTextMarkup(type: type, color: color, selection: selection)
         refreshPDFView()
     }
 
@@ -411,13 +429,29 @@ final class ReaderLibrary: ObservableObject {
     }
 
     private func hasAnnotation(ofType type: PDFAnnotationSubtype, in selection: PDFSelection) -> Bool {
-        selection.pages.contains { page in
+        !annotations(ofType: type, in: selection).isEmpty
+    }
+
+    private func annotations(ofType type: PDFAnnotationSubtype, in selection: PDFSelection) -> [PDFAnnotation] {
+        selection.pages.flatMap { page in
             let bounds = selection.bounds(for: page)
-            return page.annotations.contains { annotation in
+            return page.annotations.filter { annotation in
                 annotation.type == type.rawValue.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
                     && annotation.bounds.intersects(bounds)
             }
         }
+    }
+
+    private func colorsMatch(_ first: NSColor, _ second: NSColor) -> Bool {
+        guard let first = first.usingColorSpace(.deviceRGB),
+              let second = second.usingColorSpace(.deviceRGB) else {
+            return first.isEqual(second)
+        }
+        let tolerance: CGFloat = 0.02
+        return abs(first.redComponent - second.redComponent) < tolerance
+            && abs(first.greenComponent - second.greenComponent) < tolerance
+            && abs(first.blueComponent - second.blueComponent) < tolerance
+            && abs(first.alphaComponent - second.alphaComponent) < tolerance
     }
 
     private func removeAnnotations(ofType type: PDFAnnotationSubtype, in selection: PDFSelection) {
