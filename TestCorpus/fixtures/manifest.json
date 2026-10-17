@@ -49,7 +49,7 @@
       "sha256": "7560ffd80032c01caac74cfc30059b9584783bf574fcf24142dc521afe9a349e",
       "type": "markup-regression",
       "pages": 1,
-      "notes": "Synthetic selectable text plus an existing highlight, underline, and independent note; used to verify color changes and non-destructive toggles."
+      "notes": "Synthetic selectable text plus an existing highlight, underline, and independent note; used to verify color changes, selection retention while the custom color panel is open, and non-destructive toggles."
     },
     {
       "filename": "malformed-xref.pdf",

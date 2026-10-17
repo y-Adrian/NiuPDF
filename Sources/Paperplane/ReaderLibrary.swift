@@ -349,6 +349,14 @@ final class ReaderLibrary: ObservableObject {
         )
     }
 
+    func toggleHighlight(in selection: PDFSelection) {
+        toggleTextMarkup(
+            type: .highlight,
+            color: selectedHighlightColor.nsColor.withAlphaComponent(0.42),
+            in: selection
+        )
+    }
+
     func underlineSelection() {
         applyUnderline(color: selectedUnderlineColor)
     }
@@ -359,21 +367,33 @@ final class ReaderLibrary: ObservableObject {
 
     func applyHighlight(color: MarkupColor) {
         guard let selection = selectedText else { return }
+        applyHighlight(color: color, to: selection)
+    }
+
+    func applyHighlight(color: MarkupColor, to selection: PDFSelection) {
         selectedHighlightColor = color
         removeAnnotations(ofType: .highlight, in: selection)
         addTextMarkup(type: .highlight, color: color.nsColor.withAlphaComponent(0.42), selection: selection)
     }
 
     func applyUnderline(color: MarkupColor) {
-        guard selectedText != nil else { return }
+        guard let selection = selectedText else { return }
+        applyUnderline(color: color, to: selection)
+    }
+
+    func applyUnderline(color: MarkupColor, to selection: PDFSelection) {
         selectedUnderlineColor = color
-        toggleTextMarkup(type: .underline, color: color.nsColor)
+        toggleTextMarkup(type: .underline, color: color.nsColor, in: selection)
     }
 
     func applyStrikeOut(color: MarkupColor) {
-        guard selectedText != nil else { return }
+        guard let selection = selectedText else { return }
+        applyStrikeOut(color: color, to: selection)
+    }
+
+    func applyStrikeOut(color: MarkupColor, to selection: PDFSelection) {
         selectedStrikeOutColor = color
-        toggleTextMarkup(type: .strikeOut, color: color.nsColor)
+        toggleTextMarkup(type: .strikeOut, color: color.nsColor, in: selection)
     }
 
     func toggleNoteAnnotation() {
@@ -406,6 +426,10 @@ final class ReaderLibrary: ObservableObject {
 
     private func toggleTextMarkup(type: PDFAnnotationSubtype, color: NSColor) {
         guard let selection = selectedText else { return }
+        toggleTextMarkup(type: type, color: color, in: selection)
+    }
+
+    private func toggleTextMarkup(type: PDFAnnotationSubtype, color: NSColor, in selection: PDFSelection) {
         let existing = annotations(ofType: type, in: selection)
         if !existing.isEmpty {
             removeAnnotations(ofType: type, in: selection)

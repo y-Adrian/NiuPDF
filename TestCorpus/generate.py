@@ -178,7 +178,7 @@ def main() -> None:
         "encrypted-fixture.pdf": {"type": "encrypted", "pages": 1, "user_password": "reader-test", "notes": "Synthetic; owner password is owner-test."},
         "cjk-mixed-layout.pdf": {"type": "cjk-and-rotated-text", "pages": 1, "notes": "Uses standard CID fonts; includes CJK and rotated text."},
         "existing-annotation.pdf": {"type": "existing-annotations", "pages": 1, "notes": "Contains one standard PDF Highlight annotation."},
-        "markup-regression.pdf": {"type": "markup-regression", "pages": 1, "notes": "Synthetic selectable text plus an existing highlight, underline, and independent note; used to verify color changes and non-destructive toggles."},
+        "markup-regression.pdf": {"type": "markup-regression", "pages": 1, "notes": "Synthetic selectable text plus an existing highlight, underline, and independent note; used to verify color changes, selection retention while the custom color panel is open, and non-destructive toggles."},
         "malformed-xref.pdf": {"type": "malformed-pdf", "pages": None, "notes": "Intentionally truncated invalid PDF; parser should fail safely."},
     }
     manifest = {

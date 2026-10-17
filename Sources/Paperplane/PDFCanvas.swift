@@ -78,12 +78,17 @@ struct PDFCanvas: NSViewRepresentable {
 /// Adds native PDF text markup actions to the selected text's contextual menu.
 private final class MarkupPDFView: PDFView {
     weak var readerLibrary: ReaderLibrary?
+    private var contextMenuSelection: PDFSelection?
 
     override func menu(for event: NSEvent) -> NSMenu? {
         guard let selection = selectionForContextMenu(at: event),
               !(selection.string ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-        else { return super.menu(for: event) }
+        else {
+            contextMenuSelection = nil
+            return super.menu(for: event)
+        }
 
+        contextMenuSelection = selection
         setCurrentSelection(selection, animate: false)
         let menu = super.menu(for: event) ?? NSMenu()
         removeLegacyMarkupItems(from: menu)
@@ -200,38 +205,44 @@ private final class MarkupPDFView: PDFView {
         return item
     }
 
-    @objc private func highlightFromIcon() { readerLibrary?.highlightSelection() }
+    @objc private func highlightFromIcon() {
+        guard let contextMenuSelection else { return }
+        readerLibrary?.toggleHighlight(in: contextMenuSelection)
+    }
     @objc private func applyHighlightFromRow(_ sender: NSButton) {
-        guard MarkupColor.allCases.indices.contains(sender.tag) else { return }
-        readerLibrary?.applyHighlight(color: MarkupColor.allCases[sender.tag])
+        guard MarkupColor.allCases.indices.contains(sender.tag), let contextMenuSelection else { return }
+        readerLibrary?.applyHighlight(color: MarkupColor.allCases[sender.tag], to: contextMenuSelection)
     }
     @objc private func toggleNote() { readerLibrary?.toggleNoteAnnotation() }
     @objc private func toggleUnderlineFromIcon() { readerLibrary?.underlineSelection() }
     @objc private func applyUnderlineFromRow(_ sender: NSButton) {
-        guard MarkupColor.allCases.indices.contains(sender.tag) else { return }
-        readerLibrary?.applyUnderline(color: MarkupColor.allCases[sender.tag])
+        guard MarkupColor.allCases.indices.contains(sender.tag), let contextMenuSelection else { return }
+        readerLibrary?.applyUnderline(color: MarkupColor.allCases[sender.tag], to: contextMenuSelection)
     }
     @objc private func toggleStrikeOutFromIcon() { readerLibrary?.strikeOutSelection() }
     @objc private func applyStrikeOutFromRow(_ sender: NSButton) {
-        guard MarkupColor.allCases.indices.contains(sender.tag) else { return }
-        readerLibrary?.applyStrikeOut(color: MarkupColor.allCases[sender.tag])
+        guard MarkupColor.allCases.indices.contains(sender.tag), let contextMenuSelection else { return }
+        readerLibrary?.applyStrikeOut(color: MarkupColor.allCases[sender.tag], to: contextMenuSelection)
     }
 
     @objc private func chooseHighlightColor(_ sender: NSButton) {
+        guard let selection = contextMenuSelection else { return }
         presentColorPicker(from: sender, initialColor: readerLibrary?.selectedHighlightColor ?? .yellow) { [weak self] color in
-            self?.readerLibrary?.applyHighlight(color: color)
+            self?.readerLibrary?.applyHighlight(color: color, to: selection)
         }
     }
 
     @objc private func chooseUnderlineColor(_ sender: NSButton) {
+        guard let selection = contextMenuSelection else { return }
         presentColorPicker(from: sender, initialColor: readerLibrary?.selectedUnderlineColor ?? .yellow) { [weak self] color in
-            self?.readerLibrary?.applyUnderline(color: color)
+            self?.readerLibrary?.applyUnderline(color: color, to: selection)
         }
     }
 
     @objc private func chooseStrikeOutColor(_ sender: NSButton) {
+        guard let selection = contextMenuSelection else { return }
         presentColorPicker(from: sender, initialColor: readerLibrary?.selectedStrikeOutColor ?? .yellow) { [weak self] color in
-            self?.readerLibrary?.applyStrikeOut(color: color)
+            self?.readerLibrary?.applyStrikeOut(color: color, to: selection)
         }
     }
 

@@ -68,6 +68,7 @@ class CorpusTests(unittest.TestCase):
         self.assertIn("five highlight colors", text)
         self.assertIn("toggle off", text)
         self.assertIn("independent from highlights", text)
+        self.assertIn("Select this text to check", text)
 
         annotations = [item.get_object() for item in reader.pages[0].get("/Annots", [])]
         subtypes = [item.get("/Subtype") for item in annotations]
