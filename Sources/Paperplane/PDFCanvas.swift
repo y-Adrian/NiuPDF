@@ -20,7 +20,7 @@ struct PDFCanvas: NSViewRepresentable {
         }
         view.minScaleFactor = 0.25
         view.maxScaleFactor = 5
-        view.displaysAsBook = false
+        view.displaysAsBook = library.layoutMode.displaysAsBook
         library.pdfView = view
         if let page = document.page(at: library.currentPageIndex) { view.go(to: page) }
         library.applyPendingRestoredZoom(to: view)

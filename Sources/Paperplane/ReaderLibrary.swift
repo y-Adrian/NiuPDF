@@ -7,6 +7,7 @@ enum ReaderLayout: String, CaseIterable, Identifiable {
     case continuous
     case singlePage
     case twoPage
+    case twoPageBook
 
     var id: String { rawValue }
 
@@ -15,6 +16,7 @@ enum ReaderLayout: String, CaseIterable, Identifiable {
         case .continuous: "连续滚动"
         case .singlePage: "单页"
         case .twoPage: "双页连续"
+        case .twoPageBook: "封面 + 双页"
         }
     }
 
@@ -22,9 +24,12 @@ enum ReaderLayout: String, CaseIterable, Identifiable {
         switch self {
         case .continuous: .singlePageContinuous
         case .singlePage: .singlePage
-        case .twoPage: .twoUpContinuous
+        case .twoPage, .twoPageBook: .twoUpContinuous
         }
     }
+
+    var displaysAsBook: Bool { self == .twoPageBook }
+    var isTwoPage: Bool { self == .twoPage || self == .twoPageBook }
 }
 
 enum SidebarMode {
@@ -198,8 +203,8 @@ final class ReaderLibrary: ObservableObject {
         let pageBounds = page.bounds(for: pdfView.displayBox)
         guard pageBounds.width > 0, pageBounds.height > 0 else { return }
 
-        let pageCountInSpread: CGFloat = layoutMode == .twoPage ? 2 : 1
-        let spreadSpacing: CGFloat = layoutMode == .twoPage ? 10 : 0
+        let pageCountInSpread: CGFloat = layoutMode.isTwoPage ? 2 : 1
+        let spreadSpacing: CGFloat = layoutMode.isTwoPage ? 10 : 0
         let availableWidth = pdfView.bounds.width
             - pdfView.pageBreakMargins.left
             - pdfView.pageBreakMargins.right
@@ -233,6 +238,9 @@ final class ReaderLibrary: ObservableObject {
     func applyLayout(to view: PDFView) {
         if view.displayMode != layoutMode.pdfDisplayMode {
             view.displayMode = layoutMode.pdfDisplayMode
+        }
+        if view.displaysAsBook != layoutMode.displaysAsBook {
+            view.displaysAsBook = layoutMode.displaysAsBook
         }
     }
 
