@@ -190,6 +190,8 @@ private final class MarkupColorSwatchButton: NSButton {
 
 /// Adds native PDF text markup actions to the selected text's contextual menu.
 private final class MarkupPDFView: PDFView, NSPopoverDelegate {
+    private static var sharedNativeAddNoteAction: Selector?
+
     weak var readerLibrary: ReaderLibrary?
     private var contextMenuSelection: PDFSelection?
     private var nativeAddNoteAction: Selector?
@@ -285,6 +287,9 @@ private final class MarkupPDFView: PDFView, NSPopoverDelegate {
            let action = nativeNoteItem?.action {
             nativeAddNoteAction = action
             nativeAddNoteTarget = nativeNoteItem?.target
+            if nativeNoteItem?.target == nil || nativeNoteItem?.target === self {
+                Self.sharedNativeAddNoteAction = action
+            }
         }
         var editingItems: [NSMenuItem] = []
 
@@ -324,9 +329,9 @@ private final class MarkupPDFView: PDFView, NSPopoverDelegate {
     }
 
     private func cachedNativeAddNoteItem() -> NSMenuItem? {
-        guard let nativeAddNoteAction else { return nil }
-        let item = NSMenuItem(title: "Add Note", action: nativeAddNoteAction, keyEquivalent: "")
-        item.target = nativeAddNoteTarget
+        guard let action = nativeAddNoteAction ?? Self.sharedNativeAddNoteAction else { return nil }
+        let item = NSMenuItem(title: "Add Note", action: action, keyEquivalent: "")
+        item.target = nativeAddNoteTarget ?? self
         return item
     }
 
