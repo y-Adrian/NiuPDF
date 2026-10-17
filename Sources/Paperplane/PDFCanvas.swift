@@ -88,11 +88,10 @@ private final class MarkupPDFView: PDFView {
         var editingItems: [NSMenuItem] = []
 
         editingItems.append(colorRow(icon: "eraser", accessibilityPrefix: "高亮", iconAction: #selector(removeHighlights), colorAction: #selector(applyHighlightFromRow(_:)), selectedColor: readerLibrary?.selectedHighlightColor ?? .yellow, leadingSymbol: "highlighter"))
-
-        let noteTitle = readerLibrary?.hasNoteAnnotationForSelection() == true ? "移除标注" : "添加标注"
-        editingItems.append(actionItem(noteTitle, action: #selector(toggleNote)))
         editingItems.append(colorRow(icon: "underline", accessibilityPrefix: "下划线", iconAction: #selector(toggleUnderlineFromIcon), colorAction: #selector(applyUnderlineFromRow(_:)), selectedColor: readerLibrary?.selectedUnderlineColor ?? .yellow))
         editingItems.append(colorRow(icon: "strikethrough", accessibilityPrefix: "删除线", iconAction: #selector(toggleStrikeOutFromIcon), colorAction: #selector(applyStrikeOutFromRow(_:)), selectedColor: readerLibrary?.selectedStrikeOutColor ?? .yellow))
+        let noteTitle = readerLibrary?.hasNoteAnnotationForSelection() == true ? "移除标注" : "添加标注"
+        editingItems.append(actionItem(noteTitle, action: #selector(toggleNote)))
         editingItems.append(.separator())
 
         for item in editingItems.reversed() { menu.insertItem(item, at: 0) }
