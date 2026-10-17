@@ -80,11 +80,13 @@ private final class MarkupPDFView: PDFView {
     weak var readerLibrary: ReaderLibrary?
 
     override func menu(for event: NSEvent) -> NSMenu? {
-        guard let selection = currentSelection,
+        guard let selection = selectionForContextMenu(at: event),
               !(selection.string ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
         else { return super.menu(for: event) }
 
+        setCurrentSelection(selection, animate: false)
         let menu = super.menu(for: event) ?? NSMenu()
+        removeLegacyMarkupItems(from: menu)
         var editingItems: [NSMenuItem] = []
 
         editingItems.append(colorRow(icon: "highlighter", accessibilityPrefix: "高亮", iconAction: #selector(highlightFromIcon), colorAction: #selector(applyHighlightFromRow(_:)), customColorAction: #selector(chooseHighlightColor(_:)), selectedColor: readerLibrary?.selectedHighlightColor ?? .yellow))
@@ -96,6 +98,36 @@ private final class MarkupPDFView: PDFView {
 
         for item in editingItems.reversed() { menu.insertItem(item, at: 0) }
         return menu
+    }
+
+    private func selectionForContextMenu(at event: NSEvent) -> PDFSelection? {
+        if let selection = currentSelection,
+           !(selection.string ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            return selection
+        }
+
+        let viewPoint = convert(event.locationInWindow, from: nil)
+        guard let page = page(for: viewPoint, nearest: false) else { return nil }
+        let pagePoint = convert(viewPoint, to: page)
+        return page.selectionForWord(at: pagePoint)
+    }
+
+    private func removeLegacyMarkupItems(from menu: NSMenu) {
+        let legacyTitles = ["highlight", "underline", "strikethrough", "strike out", "高亮", "下划线", "删除线", "移除高亮"]
+        for index in menu.items.indices.reversed() {
+            let item = menu.items[index]
+            if let submenu = item.submenu {
+                removeLegacyMarkupItems(from: submenu)
+                if submenu.items.isEmpty {
+                    menu.removeItem(at: index)
+                    continue
+                }
+            }
+            let title = item.title.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+            if !title.isEmpty && legacyTitles.contains(where: title.contains) {
+                menu.removeItem(at: index)
+            }
+        }
     }
 
     private func actionItem(_ title: String, action: Selector) -> NSMenuItem {

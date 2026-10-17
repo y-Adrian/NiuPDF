@@ -342,7 +342,11 @@ final class ReaderLibrary: ObservableObject {
     }
 
     func highlightSelection() {
-        applyHighlight(color: selectedHighlightColor)
+        guard selectedText != nil else { return }
+        toggleTextMarkup(
+            type: .highlight,
+            color: selectedHighlightColor.nsColor.withAlphaComponent(0.42)
+        )
     }
 
     func underlineSelection() {
@@ -370,12 +374,6 @@ final class ReaderLibrary: ObservableObject {
         guard selectedText != nil else { return }
         selectedStrikeOutColor = color
         toggleTextMarkup(type: .strikeOut, color: color.nsColor)
-    }
-
-    func removeHighlights() {
-        guard let selection = selectedText else { return }
-        removeAnnotations(ofType: .highlight, in: selection)
-        refreshPDFView()
     }
 
     func toggleNoteAnnotation() {
