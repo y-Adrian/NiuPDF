@@ -112,6 +112,86 @@ struct ThumbnailSidebar: View {
     }
 }
 
+struct PDFOutlineSidebar: View {
+    let document: PDFDocument
+    let onSelect: (Int) -> Void
+
+    var body: some View {
+        Group {
+            if let root = document.outlineRoot, root.numberOfChildren > 0 {
+                ScrollView {
+                    LazyVStack(alignment: .leading, spacing: 8) {
+                        ForEach(0..<root.numberOfChildren, id: \.self) { index in
+                            if let item = root.child(at: index) {
+                                PDFOutlineEntry(item: item, document: document, onSelect: onSelect)
+                            }
+                        }
+                    }
+                    .padding(10)
+                }
+            } else {
+                VStack(spacing: 8) {
+                    Image(systemName: "list.bullet.indent")
+                        .font(.title3)
+                        .foregroundStyle(.tertiary)
+                    Text("没有文档大纲")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    Text("此 PDF 没有嵌入目录大纲。")
+                        .font(.caption2)
+                        .foregroundStyle(.tertiary)
+                        .multilineTextAlignment(.center)
+                }
+                .padding(12)
+            }
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(Color(nsColor: .controlBackgroundColor))
+    }
+}
+
+private struct PDFOutlineEntry: View {
+    let item: PDFOutline
+    let document: PDFDocument
+    let onSelect: (Int) -> Void
+    @State private var isExpanded = true
+
+    var body: some View {
+        if item.numberOfChildren > 0 {
+            DisclosureGroup(isExpanded: $isExpanded) {
+                ForEach(0..<item.numberOfChildren, id: \.self) { index in
+                    if let child = item.child(at: index) {
+                        PDFOutlineEntry(item: child, document: document, onSelect: onSelect)
+                    }
+                }
+            } label: {
+                row
+            }
+            .disclosureGroupStyle(.automatic)
+        } else {
+            row
+        }
+    }
+
+    private var row: some View {
+        Button {
+            guard let page = item.destination?.page else { return }
+            let index = document.index(for: page)
+            guard index != NSNotFound else { return }
+            onSelect(index)
+        } label: {
+            Text(item.label ?? "未命名条目")
+                .font(.system(size: 12))
+                .foregroundStyle(.primary)
+                .multilineTextAlignment(.leading)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .help(item.label ?? "未命名条目")
+    }
+}
+
 private func thumbnail(for page: PDFPage, selected: Bool) -> some View {
     let image = page.thumbnail(of: CGSize(width: 150, height: 190), for: .mediaBox)
     return Group {

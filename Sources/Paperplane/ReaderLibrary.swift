@@ -27,6 +27,11 @@ enum ReaderLayout: String, CaseIterable, Identifiable {
     }
 }
 
+enum SidebarMode {
+    case thumbnails
+    case outline
+}
+
 @MainActor
 final class ReaderLibrary: ObservableObject {
     @Published var document: PDFDocument?
@@ -39,6 +44,7 @@ final class ReaderLibrary: ObservableObject {
     @Published var searchResultIndex = 0
     @Published var focusSearch = false
     @Published var isSidebarVisible = true
+    @Published var sidebarMode: SidebarMode = .thumbnails
     @Published var errorMessage: String?
     @Published var layoutMode: ReaderLayout = ReaderLayout(
         rawValue: UserDefaults.standard.string(forKey: "readerLayoutMode") ?? ""

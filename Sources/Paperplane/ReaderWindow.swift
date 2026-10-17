@@ -14,10 +14,25 @@ struct ReaderWindow: View {
             if let document = library.document {
                 HStack(spacing: 0) {
                     if library.isSidebarVisible {
-                        ThumbnailSidebar(document: document, selectedIndex: $library.currentPageIndex) { index in
-                            library.goToPage(index + 1)
+                        VStack(spacing: 0) {
+                            HStack(spacing: 2) {
+                                sidebarModeButton(.thumbnails, title: "缩略图", symbol: "square.grid.2x2")
+                                sidebarModeButton(.outline, title: "大纲", symbol: "list.bullet.indent")
+                            }
+                            .padding(8)
+                            Divider()
+                            switch library.sidebarMode {
+                            case .thumbnails:
+                                ThumbnailSidebar(document: document, selectedIndex: $library.currentPageIndex) { index in
+                                    library.goToPage(index + 1)
+                                }
+                            case .outline:
+                                PDFOutlineSidebar(document: document) { index in
+                                    library.goToPage(index + 1)
+                                }
+                            }
                         }
-                        .frame(width: 205)
+                        .frame(width: 220)
                         Divider()
                     }
                     PDFCanvas(document: document)
@@ -143,6 +158,21 @@ struct ReaderWindow: View {
         .padding(.horizontal, 14)
         .padding(.vertical, 8)
         .background(.regularMaterial)
+    }
+
+    private func sidebarModeButton(_ mode: SidebarMode, title: String, symbol: String) -> some View {
+        Button {
+            library.sidebarMode = mode
+        } label: {
+            Label(title, systemImage: symbol)
+                .font(.caption)
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 5)
+                .background(library.sidebarMode == mode ? Color.accentColor.opacity(0.14) : .clear,
+                            in: RoundedRectangle(cornerRadius: 5))
+        }
+        .buttonStyle(.plain)
+        .foregroundStyle(library.sidebarMode == mode ? Color.accentColor : .secondary)
     }
 
     private var emptyState: some View {
