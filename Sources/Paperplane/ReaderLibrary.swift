@@ -365,14 +365,7 @@ final class ReaderLibrary: ObservableObject {
 
     func applyHighlight(color: MarkupColor, to selection: PDFSelection) {
         selectedHighlightColor = color
-        // Keep existing PDF annotations intact. Adding a new opaque markup lets the
-        // chosen RGB color render as selected and avoids deleting marks by a broad
-        // selection bounding box.
-        addTextMarkup(type: .highlight, color: color.nsColor, selection: selection)
-        // PDFView draws the active text selection over page annotations. Clear it so
-        // the newly applied color is visible immediately instead of remaining blue.
-        pdfView?.clearSelection()
-        refreshPDFView()
+        replaceTextMarkup(type: .highlight, color: color.nsColor, selection: selection)
     }
 
     func applyUnderline(color: MarkupColor) {
@@ -382,7 +375,7 @@ final class ReaderLibrary: ObservableObject {
 
     func applyUnderline(color: MarkupColor, to selection: PDFSelection) {
         selectedUnderlineColor = color
-        toggleTextMarkup(type: .underline, color: color.nsColor, in: selection)
+        replaceTextMarkup(type: .underline, color: color.nsColor, selection: selection)
     }
 
     func applyStrikeOut(color: MarkupColor) {
@@ -392,7 +385,7 @@ final class ReaderLibrary: ObservableObject {
 
     func applyStrikeOut(color: MarkupColor, to selection: PDFSelection) {
         selectedStrikeOutColor = color
-        toggleTextMarkup(type: .strikeOut, color: color.nsColor, in: selection)
+        replaceTextMarkup(type: .strikeOut, color: color.nsColor, selection: selection)
     }
 
     func toggleNoteAnnotation() {
@@ -441,6 +434,38 @@ final class ReaderLibrary: ObservableObject {
         addTextMarkup(type: type, color: color, selection: selection)
         pdfView?.clearSelection()
         refreshPDFView()
+    }
+
+    private func replaceTextMarkup(type: PDFAnnotationSubtype, color: NSColor, selection: PDFSelection) {
+        removeMatchingAnnotations(ofType: type, in: selection)
+        addTextMarkup(type: type, color: color, selection: selection)
+        pdfView?.clearSelection()
+        refreshPDFView()
+    }
+
+    /// Color swatches replace annotations created for the same selected line. Matching
+    /// line rectangles avoids deleting an entire longer annotation just because a
+    /// smaller selection happens to intersect its broad bounding box.
+    private func removeMatchingAnnotations(ofType type: PDFAnnotationSubtype, in selection: PDFSelection) {
+        let annotationType = type.rawValue.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
+        for line in selection.selectionsByLine() {
+            for page in line.pages {
+                let targetBounds = line.bounds(for: page)
+                guard !targetBounds.isNull, !targetBounds.isEmpty else { continue }
+                for annotation in page.annotations where
+                    annotation.type == annotationType && sameMarkupBounds(annotation.bounds, targetBounds) {
+                    page.removeAnnotation(annotation)
+                }
+            }
+        }
+    }
+
+    private func sameMarkupBounds(_ first: CGRect, _ second: CGRect) -> Bool {
+        let tolerance: CGFloat = 1.5
+        return abs(first.minX - second.minX) <= tolerance
+            && abs(first.minY - second.minY) <= tolerance
+            && abs(first.maxX - second.maxX) <= tolerance
+            && abs(first.maxY - second.maxY) <= tolerance
     }
 
     private func addTextMarkup(type: PDFAnnotationSubtype, color: NSColor, selection: PDFSelection) {
