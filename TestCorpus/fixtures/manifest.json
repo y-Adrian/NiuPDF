@@ -1,0 +1,55 @@
+{
+  "generated_by": "TestCorpus/generate.py",
+  "license": "CC0-1.0; synthetic fixtures authored for this project",
+  "fixtures": [
+    {
+      "filename": "large-501-pages.pdf",
+      "bytes": 368790,
+      "sha256": "47445359cc3b0a3c185798d4caa2a6495480b758dd9eaab09187417c31f6f43a",
+      "type": "large-document",
+      "pages": 501,
+      "notes": "Synthetic repeated text; no personal data."
+    },
+    {
+      "filename": "scanned-image-only.pdf",
+      "bytes": 32353,
+      "sha256": "52085c0e87ee9d09f2a212a5bf12f5821cd9d776e125f6f00e68c240fc8a2ed8",
+      "type": "image-only-scan",
+      "pages": 1,
+      "notes": "Synthetic image; no searchable text by design."
+    },
+    {
+      "filename": "encrypted-fixture.pdf",
+      "bytes": 1674,
+      "sha256": "9e9f0579a125ae8e6cddd881713e988a0e275fcd33fe8fd14df4238c10fbfe3c",
+      "type": "encrypted",
+      "pages": 1,
+      "user_password": "reader-test",
+      "notes": "Synthetic; owner password is owner-test."
+    },
+    {
+      "filename": "cjk-mixed-layout.pdf",
+      "bytes": 5191,
+      "sha256": "aa65856f29be2b769128a218d22677ab8d12127c58cd2c0a3583a10c4cacfacf",
+      "type": "cjk-and-rotated-text",
+      "pages": 1,
+      "notes": "Uses standard CID fonts; includes CJK and rotated text."
+    },
+    {
+      "filename": "existing-annotation.pdf",
+      "bytes": 1619,
+      "sha256": "a6bdd31472593b2add78c4b7b55a47d5d4093683ee97c7142de77624aacbf7c8",
+      "type": "existing-annotations",
+      "pages": 1,
+      "notes": "Contains one standard PDF Highlight annotation."
+    },
+    {
+      "filename": "malformed-xref.pdf",
+      "bytes": 60,
+      "sha256": "4383e01d364346fdc379367b0ea527566cf5084066ab6e54684828620f6f88bf",
+      "type": "malformed-pdf",
+      "pages": null,
+      "notes": "Intentionally truncated invalid PDF; parser should fail safely."
+    }
+  ]
+}

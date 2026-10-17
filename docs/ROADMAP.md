@@ -7,6 +7,7 @@
 - 归档原始需求和开发注意事项。
 - 建立优先级路线、开发日志格式和测试语料库规则。
 - 确认 macOS 原生构建链路和当前可运行的阅读器基线。
+- 分发渠道确定为 Mac App Store；后续按 App Sandbox 与 security-scoped bookmark 设计。
 
 ## 阶段 1：PDFKit 技术探针与回归语料
 
