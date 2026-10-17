@@ -329,25 +329,24 @@ final class ReaderLibrary: ObservableObject {
     }
 
     func highlightSelection() {
-        addTextMarkup(type: .highlight, color: selectedMarkupColor.nsColor.withAlphaComponent(0.42), label: "高亮")
+        addTextMarkup(type: .highlight, color: selectedMarkupColor.nsColor.withAlphaComponent(0.42))
     }
 
     func underlineSelection() {
-        addTextMarkup(type: .underline, color: selectedMarkupColor.nsColor, label: "下划线")
+        addTextMarkup(type: .underline, color: selectedMarkupColor.nsColor)
     }
 
     func strikeOutSelection() {
-        addTextMarkup(type: .strikeOut, color: selectedMarkupColor.nsColor, label: "删除线")
+        addTextMarkup(type: .strikeOut, color: selectedMarkupColor.nsColor)
     }
 
-    private func addTextMarkup(type: PDFAnnotationSubtype, color: NSColor, label: String) {
+    private func addTextMarkup(type: PDFAnnotationSubtype, color: NSColor) {
         guard let selection = pdfView?.currentSelection else { return }
         for page in selection.pages {
             let bounds = selection.bounds(for: page)
             guard !bounds.isNull, !bounds.isEmpty else { continue }
             let annotation = PDFAnnotation(bounds: bounds, forType: type, withProperties: nil)
             annotation.color = color
-            annotation.contents = label
             page.addAnnotation(annotation)
         }
         pdfView?.setNeedsDisplay(pdfView?.bounds ?? .zero)
