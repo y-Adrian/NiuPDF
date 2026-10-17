@@ -129,6 +129,12 @@ private final class MarkupPDFView: PDFView {
                 }
             }
             let title = item.title.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+            // PDFKit's legacy markup palette is exposed as a blank-title custom view,
+            // so title matching alone leaves the old colors and U/S buttons behind.
+            if item.view != nil && title.isEmpty {
+                menu.removeItem(at: index)
+                continue
+            }
             if !title.isEmpty && legacyTitles.contains(where: title.contains) {
                 menu.removeItem(at: index)
             }
