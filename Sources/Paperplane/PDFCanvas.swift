@@ -284,13 +284,16 @@ private final class MarkupPDFView: PDFView, NSPopoverDelegate {
         editingItems.append(colorRow(iconStyle: .highlight, accessibilityPrefix: "高亮", iconAction: #selector(highlightFromIcon), colorAction: #selector(applyHighlightFromRow(_:)), selectedColor: readerLibrary?.selectedHighlightColor ?? .yellow))
         editingItems.append(colorRow(iconStyle: .underline, accessibilityPrefix: "下划线", iconAction: #selector(toggleUnderlineFromIcon), colorAction: #selector(applyUnderlineFromRow(_:)), selectedColor: readerLibrary?.selectedUnderlineColor ?? .yellow))
         editingItems.append(colorRow(iconStyle: .strikethrough, accessibilityPrefix: "删除线", iconAction: #selector(toggleStrikeOutFromIcon), colorAction: #selector(applyStrikeOutFromRow(_:)), selectedColor: readerLibrary?.selectedStrikeOutColor ?? .yellow))
-        let hasNote = readerLibrary?.hasNoteAnnotationForSelection() == true
+        let hasNote = readerLibrary?.hasNoteAnnotation(in: selection) == true
+        let hasMarkup = readerLibrary?.hasTextMarkupAnnotation(in: selection) == true
         if hasNote {
             editingItems.append(actionItem("Remove Note", action: #selector(toggleNote)))
-        } else if let nativeNoteItem {
-            editingItems.append(nativeNoteItem)
-        } else {
-            editingItems.append(actionItem("Add Note", action: #selector(toggleNote)))
+        } else if hasMarkup {
+            if let nativeNoteItem {
+                editingItems.append(nativeNoteItem)
+            } else {
+                editingItems.append(actionItem("Add Note", action: #selector(toggleNote)))
+            }
         }
         editingItems.append(.separator())
 
