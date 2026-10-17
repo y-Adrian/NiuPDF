@@ -345,14 +345,14 @@ final class ReaderLibrary: ObservableObject {
         guard selectedText != nil else { return }
         toggleTextMarkup(
             type: .highlight,
-            color: selectedHighlightColor.nsColor.withAlphaComponent(0.42)
+            color: selectedHighlightColor.nsColor
         )
     }
 
     func toggleHighlight(in selection: PDFSelection) {
         toggleTextMarkup(
             type: .highlight,
-            color: selectedHighlightColor.nsColor.withAlphaComponent(0.42),
+            color: selectedHighlightColor.nsColor,
             in: selection
         )
     }
@@ -372,8 +372,10 @@ final class ReaderLibrary: ObservableObject {
 
     func applyHighlight(color: MarkupColor, to selection: PDFSelection) {
         selectedHighlightColor = color
-        removeAnnotations(ofType: .highlight, in: selection)
-        addTextMarkup(type: .highlight, color: color.nsColor.withAlphaComponent(0.42), selection: selection)
+        // Keep existing PDF annotations intact. Adding a new opaque markup lets the
+        // chosen RGB color render as selected and avoids deleting marks by a broad
+        // selection bounding box.
+        addTextMarkup(type: .highlight, color: color.nsColor, selection: selection)
         // PDFView draws the active text selection over page annotations. Clear it so
         // the newly applied color is visible immediately instead of remaining blue.
         pdfView?.clearSelection()
