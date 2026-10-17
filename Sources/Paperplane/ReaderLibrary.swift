@@ -56,10 +56,12 @@ final class ReaderLibrary: ObservableObject {
     private var scopedURL: URL?
     private var fileRevision: PDFFileRevision?
     private var didAttemptRestore = false
+    private var pendingRestoredZoomScale: CGFloat?
 
     private enum ReadingStateKey {
         static let bookmark = "lastOpenedPDFBookmark"
         static let pageIndex = "lastOpenedPDFPageIndex"
+        static let zoomScale = "lastOpenedPDFZoomScale"
     }
 
     var displayName: String { fileURL?.deletingPathExtension().lastPathComponent ?? "未打开文稿" }
@@ -121,11 +123,17 @@ final class ReaderLibrary: ObservableObject {
             : 0
         currentPageIndex = min(max(rememberedIndex, 0), max(opened.document.pageCount - 1, 0))
         UserDefaults.standard.set(currentPageIndex, forKey: ReadingStateKey.pageIndex)
+        if restoringLastDocument {
+            let rememberedScale = UserDefaults.standard.double(forKey: ReadingStateKey.zoomScale)
+            pendingRestoredZoomScale = rememberedScale > 0 ? CGFloat(rememberedScale) : nil
+        } else {
+            pendingRestoredZoomScale = nil
+            pdfView?.autoScales = true
+        }
         searchText = ""
         searchResults = []
         searchResultIndex = 0
         errorMessage = nil
-        if let page = opened.document.page(at: currentPageIndex) { pdfView?.go(to: page) }
         persistSecurityScopedBookmark(for: url)
     }
 
@@ -167,14 +175,14 @@ final class ReaderLibrary: ObservableObject {
         guard let pdfView else { return }
         pdfView.autoScales = false
         pdfView.scaleFactor = min(max(pdfView.scaleFactor * factor, pdfView.minScaleFactor), pdfView.maxScaleFactor)
-        zoomScale = pdfView.scaleFactor
+        updateZoomScale(pdfView.scaleFactor)
     }
 
     func setZoom(_ scale: CGFloat) {
         guard let pdfView else { return }
         pdfView.autoScales = false
         pdfView.scaleFactor = min(max(scale, pdfView.minScaleFactor), pdfView.maxScaleFactor)
-        zoomScale = pdfView.scaleFactor
+        updateZoomScale(pdfView.scaleFactor)
     }
 
     func fitPage() {
@@ -205,7 +213,21 @@ final class ReaderLibrary: ObservableObject {
 
         pdfView.autoScales = false
         pdfView.scaleFactor = min(max(scale, pdfView.minScaleFactor), pdfView.maxScaleFactor)
-        zoomScale = pdfView.scaleFactor
+        updateZoomScale(pdfView.scaleFactor)
+    }
+
+    func updateZoomScale(_ scale: CGFloat) {
+        guard scale.isFinite, scale > 0 else { return }
+        zoomScale = scale
+        UserDefaults.standard.set(Double(scale), forKey: ReadingStateKey.zoomScale)
+    }
+
+    func applyPendingRestoredZoom(to view: PDFView) {
+        guard let scale = pendingRestoredZoomScale else { return }
+        view.autoScales = false
+        view.scaleFactor = min(max(scale, view.minScaleFactor), view.maxScaleFactor)
+        pendingRestoredZoomScale = nil
+        updateZoomScale(view.scaleFactor)
     }
 
     func applyLayout(to view: PDFView) {

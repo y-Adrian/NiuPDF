@@ -23,6 +23,7 @@ struct PDFCanvas: NSViewRepresentable {
         view.displaysAsBook = false
         library.pdfView = view
         if let page = document.page(at: library.currentPageIndex) { view.go(to: page) }
+        library.applyPendingRestoredZoom(to: view)
 
         NotificationCenter.default.addObserver(
             context.coordinator,
@@ -44,6 +45,7 @@ struct PDFCanvas: NSViewRepresentable {
         if view.document !== document {
             view.document = document
             if let page = document.page(at: library.currentPageIndex) { view.go(to: page) }
+            library.applyPendingRestoredZoom(to: view)
         }
         if library.pdfView !== view { library.pdfView = view }
     }
@@ -67,7 +69,7 @@ struct PDFCanvas: NSViewRepresentable {
 
         @objc func scaleChanged(_ notification: Notification) {
             guard let view = notification.object as? PDFView else { return }
-            Task { @MainActor in library.zoomScale = view.scaleFactor }
+            Task { @MainActor in library.updateZoomScale(view.scaleFactor) }
         }
     }
 }
