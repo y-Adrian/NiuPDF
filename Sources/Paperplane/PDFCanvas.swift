@@ -84,7 +84,8 @@ private final class MarkupPDFView: PDFView {
               !(selection.string ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
         else { return super.menu(for: event) }
 
-        let menu = NSMenu()
+        let menu = super.menu(for: event) ?? NSMenu()
+        if !menu.items.isEmpty { menu.addItem(.separator()) }
         menu.addItem(actionItem("高亮", action: #selector(addHighlight)))
         menu.addItem(actionItem("下划线", action: #selector(addUnderline)))
         menu.addItem(actionItem("删除线", action: #selector(addStrikeOut)))
