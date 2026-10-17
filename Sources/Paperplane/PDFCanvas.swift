@@ -138,7 +138,7 @@ private final class MarkupToolIconButton: NSButton {
 }
 
 private final class MarkupColorSwatchButton: NSButton {
-    private let isSelectedColor: Bool
+    private(set) var isSelectedColor: Bool
 
     init(selected: Bool, target: AnyObject, action: Selector) {
         isSelectedColor = selected
@@ -158,6 +158,12 @@ private final class MarkupColorSwatchButton: NSButton {
     required init?(coder: NSCoder) { nil }
 
     override var intrinsicContentSize: NSSize { NSSize(width: 24, height: 24) }
+
+    func setSelectedColor(_ selected: Bool) {
+        guard isSelectedColor != selected else { return }
+        isSelectedColor = selected
+        needsDisplay = true
+    }
 
     override func draw(_ dirtyRect: NSRect) {
         if isSelectedColor {
@@ -365,6 +371,7 @@ private final class MarkupPDFView: PDFView, NSPopoverDelegate {
     @objc private func applyHighlightFromRow(_ sender: NSButton) {
         guard MarkupColor.allCases.indices.contains(sender.tag), let contextMenuSelection else { return }
         readerLibrary?.applyHighlight(color: MarkupColor.allCases[sender.tag], to: contextMenuSelection)
+        updateSelectedSwatch(in: sender)
     }
     @objc private func toggleNote() { readerLibrary?.toggleNoteAnnotation() }
     @objc private func toggleUnderlineFromIcon() {
@@ -374,6 +381,7 @@ private final class MarkupPDFView: PDFView, NSPopoverDelegate {
     @objc private func applyUnderlineFromRow(_ sender: NSButton) {
         guard MarkupColor.allCases.indices.contains(sender.tag), let contextMenuSelection else { return }
         readerLibrary?.applyUnderline(color: MarkupColor.allCases[sender.tag], to: contextMenuSelection)
+        updateSelectedSwatch(in: sender)
     }
     @objc private func toggleStrikeOutFromIcon() {
         guard let contextMenuSelection else { return }
@@ -382,6 +390,14 @@ private final class MarkupPDFView: PDFView, NSPopoverDelegate {
     @objc private func applyStrikeOutFromRow(_ sender: NSButton) {
         guard MarkupColor.allCases.indices.contains(sender.tag), let contextMenuSelection else { return }
         readerLibrary?.applyStrikeOut(color: MarkupColor.allCases[sender.tag], to: contextMenuSelection)
+        updateSelectedSwatch(in: sender)
+    }
+
+    private func updateSelectedSwatch(in sender: NSButton) {
+        guard let stack = sender.superview as? NSStackView else { return }
+        for case let swatch as MarkupColorSwatchButton in stack.arrangedSubviews {
+            swatch.setSelectedColor(swatch === sender)
+        }
     }
 
 }
