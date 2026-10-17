@@ -10,52 +10,26 @@ final class CommentBubblePDFAnnotation: PDFAnnotation {
         let rect = bounds.standardized
         guard rect.width > 6, rect.height > 6 else { return }
 
-        // Build the bubble and its tail as one path so the outline has no seam.
-        // Core Graphics keeps these as vector curves in PDF appearance streams.
-        let minX = rect.minX + rect.width * 0.06
-        let maxX = rect.maxX - rect.width * 0.06
-        let minY = rect.minY + rect.height * 0.22
-        let maxY = rect.maxY - rect.height * 0.06
-        let radius = min(rect.width, rect.height) * 0.18
-        let tailTip = CGPoint(x: rect.minX + rect.width * 0.40, y: rect.minY + rect.height * 0.04)
-        let path = CGMutablePath()
-        path.move(to: CGPoint(x: minX + radius, y: maxY))
-        path.addLine(to: CGPoint(x: maxX - radius, y: maxY))
-        path.addCurve(to: CGPoint(x: maxX, y: maxY - radius), control1: CGPoint(x: maxX - radius * 0.45, y: maxY), control2: CGPoint(x: maxX, y: maxY - radius * 0.45))
-        path.addLine(to: CGPoint(x: maxX, y: minY + radius))
-        path.addCurve(to: CGPoint(x: maxX - radius, y: minY), control1: CGPoint(x: maxX, y: minY + radius * 0.45), control2: CGPoint(x: maxX - radius * 0.45, y: minY))
-        path.addLine(to: CGPoint(x: rect.minX + rect.width * 0.55, y: minY))
-        path.addLine(to: tailTip)
-        path.addLine(to: CGPoint(x: rect.minX + rect.width * 0.27, y: minY))
-        path.addLine(to: CGPoint(x: minX + radius, y: minY))
-        path.addCurve(to: CGPoint(x: minX, y: minY + radius), control1: CGPoint(x: minX + radius * 0.45, y: minY), control2: CGPoint(x: minX, y: minY + radius * 0.45))
-        path.addLine(to: CGPoint(x: minX, y: maxY - radius))
-        path.addCurve(to: CGPoint(x: minX + radius, y: maxY), control1: CGPoint(x: minX, y: maxY - radius * 0.45), control2: CGPoint(x: minX + radius * 0.45, y: maxY))
-        path.closeSubpath()
+        let tint = NSColor(calibratedRed: 0.48, green: 0.34, blue: 0.10, alpha: 1)
+        let symbolConfiguration = NSImage.SymbolConfiguration(
+            pointSize: min(rect.width, rect.height) * 0.86,
+            weight: .medium
+        ).applying(NSImage.SymbolConfiguration(hierarchicalColor: tint))
+        guard let symbol = NSImage(systemSymbolName: "text.bubble", accessibilityDescription: "评论")?
+            .withSymbolConfiguration(symbolConfiguration) else { return }
 
-        context.saveGState()
-        context.setAllowsAntialiasing(true)
-        context.setShouldAntialias(true)
-        context.setFillColor(NSColor(calibratedRed: 1, green: 0.88, blue: 0.48, alpha: 1).cgColor)
-        context.setStrokeColor(NSColor(calibratedRed: 0.56, green: 0.38, blue: 0.08, alpha: 1).cgColor)
-        context.setLineWidth(0.9)
-        context.setLineJoin(.round)
-        context.addPath(path)
-        context.drawPath(using: .fillStroke)
-
-        let dotRadius: CGFloat = 0.65
-        let centerY = rect.minY + rect.height * 0.59
-        for fraction in [CGFloat(0.30), 0.50, 0.70] {
-            let dot = CGRect(
-                x: rect.minX + rect.width * fraction - dotRadius,
-                y: centerY - dotRadius,
-                width: dotRadius * 2,
-                height: dotRadius * 2
-            )
-            context.setFillColor(NSColor(calibratedRed: 0.42, green: 0.32, blue: 0.12, alpha: 1).cgColor)
-            context.fillEllipse(in: dot)
-        }
-        context.restoreGState()
+        let fit = min(rect.width / symbol.size.width, rect.height / symbol.size.height)
+        let size = CGSize(width: symbol.size.width * fit, height: symbol.size.height * fit)
+        let imageRect = CGRect(
+            x: rect.midX - size.width / 2,
+            y: rect.midY - size.height / 2,
+            width: size.width,
+            height: size.height
+        )
+        NSGraphicsContext.saveGraphicsState()
+        NSGraphicsContext.current = NSGraphicsContext(cgContext: context, flipped: false)
+        symbol.draw(in: imageRect, from: .zero, operation: .sourceOver, fraction: 1)
+        NSGraphicsContext.restoreGraphicsState()
     }
 }
 
