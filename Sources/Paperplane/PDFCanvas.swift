@@ -94,9 +94,9 @@ private final class MarkupPDFView: PDFView {
         removeLegacyMarkupItems(from: menu)
         var editingItems: [NSMenuItem] = []
 
-        editingItems.append(colorRow(icon: "highlighter", accessibilityPrefix: "高亮", iconAction: #selector(highlightFromIcon), colorAction: #selector(applyHighlightFromRow(_:)), customColorAction: #selector(chooseHighlightColor(_:)), selectedColor: readerLibrary?.selectedHighlightColor ?? .yellow))
-        editingItems.append(colorRow(icon: "underline", accessibilityPrefix: "下划线", iconAction: #selector(toggleUnderlineFromIcon), colorAction: #selector(applyUnderlineFromRow(_:)), customColorAction: #selector(chooseUnderlineColor(_:)), selectedColor: readerLibrary?.selectedUnderlineColor ?? .yellow))
-        editingItems.append(colorRow(icon: "strikethrough", accessibilityPrefix: "删除线", iconAction: #selector(toggleStrikeOutFromIcon), colorAction: #selector(applyStrikeOutFromRow(_:)), customColorAction: #selector(chooseStrikeOutColor(_:)), selectedColor: readerLibrary?.selectedStrikeOutColor ?? .yellow))
+        editingItems.append(colorRow(icon: "highlighter", accessibilityPrefix: "高亮", iconAction: #selector(highlightFromIcon), colorAction: #selector(applyHighlightFromRow(_:)), selectedColor: readerLibrary?.selectedHighlightColor ?? .yellow))
+        editingItems.append(colorRow(icon: "underline", accessibilityPrefix: "下划线", iconAction: #selector(toggleUnderlineFromIcon), colorAction: #selector(applyUnderlineFromRow(_:)), selectedColor: readerLibrary?.selectedUnderlineColor ?? .yellow))
+        editingItems.append(colorRow(icon: "strikethrough", accessibilityPrefix: "删除线", iconAction: #selector(toggleStrikeOutFromIcon), colorAction: #selector(applyStrikeOutFromRow(_:)), selectedColor: readerLibrary?.selectedStrikeOutColor ?? .yellow))
         let noteTitle = readerLibrary?.hasNoteAnnotationForSelection() == true ? "移除标注" : "添加标注"
         editingItems.append(actionItem(noteTitle, action: #selector(toggleNote)))
         editingItems.append(.separator())
@@ -146,7 +146,6 @@ private final class MarkupPDFView: PDFView {
         accessibilityPrefix: String,
         iconAction: Selector,
         colorAction: Selector,
-        customColorAction: Selector,
         selectedColor: MarkupColor,
     ) -> NSMenuItem {
         let stack = NSStackView()
@@ -185,19 +184,7 @@ private final class MarkupPDFView: PDFView {
             stack.addArrangedSubview(button)
         }
 
-        let customColorButton = NSButton(title: "", target: self, action: customColorAction)
-        customColorButton.image = NSImage(systemSymbolName: "paintpalette", accessibilityDescription: "自定义颜色")
-        customColorButton.imagePosition = .imageOnly
-        customColorButton.isBordered = false
-        customColorButton.contentTintColor = MarkupColor.allCases.contains(selectedColor)
-            ? NSColor.secondaryLabelColor
-            : selectedColor.nsColor
-        customColorButton.setFrameSize(NSSize(width: 24, height: 24))
-        customColorButton.toolTip = "打开色盘或输入十六进制颜色"
-        customColorButton.setAccessibilityLabel(customColorButton.toolTip ?? "自定义颜色")
-        stack.addArrangedSubview(customColorButton)
-
-        let controlCount = MarkupColor.allCases.count + 2
+        let controlCount = MarkupColor.allCases.count + 1
         let rowWidth = CGFloat(controlCount * 24 + (controlCount - 1) * 4 + 20)
         stack.frame = NSRect(x: 0, y: 0, width: rowWidth, height: 28)
         let item = NSMenuItem()
@@ -225,161 +212,6 @@ private final class MarkupPDFView: PDFView {
         readerLibrary?.applyStrikeOut(color: MarkupColor.allCases[sender.tag], to: contextMenuSelection)
     }
 
-    @objc private func chooseHighlightColor(_ sender: NSButton) {
-        guard let selection = contextMenuSelection else { return }
-        presentColorPicker(from: sender, initialColor: readerLibrary?.selectedHighlightColor ?? .yellow) { [weak self] color in
-            self?.readerLibrary?.applyHighlight(color: color, to: selection)
-        }
-    }
-
-    @objc private func chooseUnderlineColor(_ sender: NSButton) {
-        guard let selection = contextMenuSelection else { return }
-        presentColorPicker(from: sender, initialColor: readerLibrary?.selectedUnderlineColor ?? .yellow) { [weak self] color in
-            self?.readerLibrary?.applyUnderline(color: color, to: selection)
-        }
-    }
-
-    @objc private func chooseStrikeOutColor(_ sender: NSButton) {
-        guard let selection = contextMenuSelection else { return }
-        presentColorPicker(from: sender, initialColor: readerLibrary?.selectedStrikeOutColor ?? .yellow) { [weak self] color in
-            self?.readerLibrary?.applyStrikeOut(color: color, to: selection)
-        }
-    }
-
-    private func presentColorPicker(
-        from button: NSButton,
-        initialColor: MarkupColor,
-        apply: @escaping (MarkupColor) -> Void
-    ) {
-        let panel = MarkupColorPickerPanel(
-            contentRect: NSRect(x: 0, y: 0, width: 300, height: 160),
-            styleMask: [.titled, .closable, .utilityWindow],
-            backing: .buffered,
-            defer: false
-        )
-        panel.title = "自定义标注颜色"
-        panel.isFloatingPanel = true
-        panel.hidesOnDeactivate = true
-        panel.contentViewController = NSHostingController(
-            rootView: MarkupColorPickerPopover(initialColor: initialColor) { [weak self, weak panel] color in
-                apply(color)
-                panel?.close()
-                if self?.colorPickerPanel === panel { self?.colorPickerPanel = nil }
-            }
-        )
-        colorPickerPanel = panel
-
-        if let window = button.window {
-            let buttonRect = window.convertToScreen(button.convert(button.bounds, to: nil))
-            panel.setFrameTopLeftPoint(NSPoint(x: buttonRect.minX, y: buttonRect.maxY + 8))
-        } else {
-            panel.center()
-        }
-        panel.makeKeyAndOrderFront(nil)
-        NSApp.activate(ignoringOtherApps: true)
-    }
-
-    private var colorPickerPanel: NSPanel?
-}
-
-private final class MarkupColorPickerPanel: NSPanel {
-    override func close() {
-        NSColorPanel.shared.close()
-        super.close()
-    }
-}
-
-private struct MarkupColorPickerPopover: View {
-    @State private var selectedColor: NSColor
-    @State private var hexText: String
-    @State private var validationMessage: String?
-
-    let onApply: (MarkupColor) -> Void
-
-    init(initialColor: MarkupColor, onApply: @escaping (MarkupColor) -> Void) {
-        _selectedColor = State(initialValue: initialColor.nsColor)
-        _hexText = State(initialValue: "#\(initialColor.hex)")
-        self.onApply = onApply
-    }
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            HStack {
-                Text("选择颜色")
-                Spacer()
-                MarkupColorWell(color: $selectedColor)
-                    .frame(width: 44, height: 24)
-            }
-            HStack(spacing: 8) {
-                TextField("#RRGGBB", text: $hexText)
-                    .textFieldStyle(.roundedBorder)
-                    .onSubmit(applyHexColor)
-                Button("应用", action: applyHexColor)
-                    .keyboardShortcut(.defaultAction)
-            }
-            if let validationMessage {
-                Text(validationMessage)
-                    .font(.caption)
-                    .foregroundStyle(.red)
-            }
-        }
-        .padding(14)
-        .frame(width: 260)
-        .onChange(of: selectedColor) { newColor in
-            if let color = newColor.usingColorSpace(.deviceRGB) {
-                hexText = String(
-                    format: "#%02X%02X%02X",
-                    Int((color.redComponent * 255).rounded()),
-                    Int((color.greenComponent * 255).rounded()),
-                    Int((color.blueComponent * 255).rounded())
-                )
-                validationMessage = nil
-            }
-        }
-        .onChange(of: hexText) { newValue in
-            guard let color = MarkupColor.custom(hex: newValue) else { return }
-            selectedColor = color.nsColor
-            validationMessage = nil
-        }
-    }
-
-    private func applyHexColor() {
-        guard let color = MarkupColor.custom(hex: hexText) else {
-            validationMessage = "请输入有效的六位十六进制颜色，例如 #3A7BD5。"
-            return
-        }
-        selectedColor = color.nsColor
-        onApply(color)
-    }
-}
-
-private struct MarkupColorWell: NSViewRepresentable {
-    @Binding var color: NSColor
-
-    func makeCoordinator() -> Coordinator { Coordinator(self) }
-
-    func makeNSView(context: Context) -> NSColorWell {
-        let colorWell = NSColorWell(frame: .zero)
-        colorWell.color = color
-        colorWell.target = context.coordinator
-        colorWell.action = #selector(Coordinator.colorChanged(_:))
-        return colorWell
-    }
-
-    func updateNSView(_ colorWell: NSColorWell, context: Context) {
-        context.coordinator.parent = self
-        if !colorWell.color.isEqual(color) { colorWell.color = color }
-    }
-
-    final class Coordinator: NSObject {
-        var parent: MarkupColorWell
-
-        init(_ parent: MarkupColorWell) { self.parent = parent }
-
-        @objc func colorChanged(_ sender: NSColorWell) {
-            parent.color = sender.color
-        }
-    }
 }
 
 struct ThumbnailSidebar: View {

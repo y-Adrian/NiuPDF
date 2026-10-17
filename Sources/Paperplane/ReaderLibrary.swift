@@ -53,26 +53,19 @@ struct MarkupColor: Identifiable, Hashable {
         )
     }
 
-    init(hex: String, title: String = "自定义颜色") {
+    init(hex: String, title: String) {
         self.hex = hex.uppercased()
         self.title = title
     }
 
     static let yellow = MarkupColor(hex: "FFD129", title: "黄色")
-    static let green = MarkupColor(hex: "4DC76B", title: "绿色")
-    static let blue = MarkupColor(hex: "388CF5", title: "蓝色")
-    static let pink = MarkupColor(hex: "F56194", title: "粉色")
-    static let purple = MarkupColor(hex: "A366E0", title: "紫色")
-    static let allCases = [yellow, green, blue, pink, purple]
-
-    static func custom(hex: String) -> MarkupColor? {
-        let normalized = hex.trimmingCharacters(in: .whitespacesAndNewlines)
-            .replacingOccurrences(of: "#", with: "")
-        guard normalized.count == 6,
-              normalized.unicodeScalars.allSatisfy(CharacterSet(charactersIn: "0123456789abcdefABCDEF").contains)
-        else { return nil }
-        return MarkupColor(hex: normalized)
-    }
+    static let orange = MarkupColor(hex: "FF9F0A", title: "橙色")
+    static let red = MarkupColor(hex: "FF3B30", title: "红色")
+    static let green = MarkupColor(hex: "34C759", title: "绿色")
+    static let cyan = MarkupColor(hex: "32ADE6", title: "青色")
+    static let blue = MarkupColor(hex: "007AFF", title: "蓝色")
+    static let purple = MarkupColor(hex: "AF52DE", title: "紫色")
+    static let allCases = [yellow, orange, red, green, cyan, blue, purple]
 }
 
 @MainActor
