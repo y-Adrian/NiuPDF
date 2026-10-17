@@ -436,8 +436,16 @@ final class ReaderLibrary: ObservableObject {
         applyUnderline(color: selectedUnderlineColor)
     }
 
+    func toggleUnderline(in selection: PDFSelection) {
+        toggleTextMarkup(type: .underline, color: selectedUnderlineColor.nsColor, in: selection)
+    }
+
     func strikeOutSelection() {
         applyStrikeOut(color: selectedStrikeOutColor)
+    }
+
+    func toggleStrikeOut(in selection: PDFSelection) {
+        toggleTextMarkup(type: .strikeOut, color: selectedStrikeOutColor.nsColor, in: selection)
     }
 
     func applyHighlight(color: MarkupColor) {

@@ -128,7 +128,9 @@ private final class MarkupToolIconButton: NSButton {
         NSColor.systemRed.setStroke()
         let line = NSBezierPath()
         line.lineWidth = 1.6
-        let y = style == .underline ? origin.y + 1.5 : origin.y + glyphSize.height * 0.56
+        // AppKit's button drawing coordinates place the string's origin at the top
+        // edge here, so the underline belongs near the far edge of the glyph box.
+        let y = style == .underline ? origin.y + glyphSize.height - 2 : origin.y + glyphSize.height * 0.56
         line.move(to: CGPoint(x: origin.x - 2, y: y))
         line.line(to: CGPoint(x: origin.x + glyphSize.width + 2, y: y))
         line.stroke()
@@ -136,7 +138,10 @@ private final class MarkupToolIconButton: NSButton {
 }
 
 private final class MarkupColorSwatchButton: NSButton {
-    init(target: AnyObject, action: Selector) {
+    private let isSelectedColor: Bool
+
+    init(selected: Bool, target: AnyObject, action: Selector) {
+        isSelectedColor = selected
         super.init(frame: .zero)
         title = ""
         self.target = target
@@ -153,6 +158,23 @@ private final class MarkupColorSwatchButton: NSButton {
     required init?(coder: NSCoder) { nil }
 
     override var intrinsicContentSize: NSSize { NSSize(width: 24, height: 24) }
+
+    override func draw(_ dirtyRect: NSRect) {
+        super.draw(dirtyRect)
+        guard isSelectedColor else { return }
+
+        let ring = NSBezierPath(ovalIn: bounds.insetBy(dx: 2.5, dy: 2.5))
+        ring.lineWidth = 1.5
+        let shadow = NSShadow()
+        shadow.shadowColor = NSColor.black.withAlphaComponent(0.45)
+        shadow.shadowBlurRadius = 3
+        shadow.shadowOffset = NSSize(width: 0, height: -1)
+        NSGraphicsContext.saveGraphicsState()
+        shadow.set()
+        NSColor.white.setStroke()
+        ring.stroke()
+        NSGraphicsContext.restoreGraphicsState()
+    }
 }
 
 /// Adds native PDF text markup actions to the selected text's contextual menu.
@@ -247,9 +269,9 @@ private final class MarkupPDFView: PDFView, NSPopoverDelegate {
         removeLegacyMarkupItems(from: menu)
         var editingItems: [NSMenuItem] = []
 
-        editingItems.append(colorRow(iconStyle: .highlight, accessibilityPrefix: "高亮", iconAction: #selector(highlightFromIcon), colorAction: #selector(applyHighlightFromRow(_:))))
-        editingItems.append(colorRow(iconStyle: .underline, accessibilityPrefix: "下划线", iconAction: #selector(toggleUnderlineFromIcon), colorAction: #selector(applyUnderlineFromRow(_:))))
-        editingItems.append(colorRow(iconStyle: .strikethrough, accessibilityPrefix: "删除线", iconAction: #selector(toggleStrikeOutFromIcon), colorAction: #selector(applyStrikeOutFromRow(_:))))
+        editingItems.append(colorRow(iconStyle: .highlight, accessibilityPrefix: "高亮", iconAction: #selector(highlightFromIcon), colorAction: #selector(applyHighlightFromRow(_:)), selectedColor: readerLibrary?.selectedHighlightColor ?? .yellow))
+        editingItems.append(colorRow(iconStyle: .underline, accessibilityPrefix: "下划线", iconAction: #selector(toggleUnderlineFromIcon), colorAction: #selector(applyUnderlineFromRow(_:)), selectedColor: readerLibrary?.selectedUnderlineColor ?? .yellow))
+        editingItems.append(colorRow(iconStyle: .strikethrough, accessibilityPrefix: "删除线", iconAction: #selector(toggleStrikeOutFromIcon), colorAction: #selector(applyStrikeOutFromRow(_:)), selectedColor: readerLibrary?.selectedStrikeOutColor ?? .yellow))
         let noteTitle = readerLibrary?.hasNoteAnnotationForSelection() == true ? "移除标注" : "添加标注"
         editingItems.append(actionItem(noteTitle, action: #selector(toggleNote)))
         editingItems.append(.separator())
@@ -305,6 +327,7 @@ private final class MarkupPDFView: PDFView, NSPopoverDelegate {
         accessibilityPrefix: String,
         iconAction: Selector,
         colorAction: Selector,
+        selectedColor: MarkupColor,
     ) -> NSMenuItem {
         let stack = NSStackView()
         stack.orientation = .horizontal
@@ -321,7 +344,7 @@ private final class MarkupPDFView: PDFView, NSPopoverDelegate {
         stack.addArrangedSubview(iconButton)
 
         for (index, color) in MarkupColor.allCases.enumerated() {
-            let button = MarkupColorSwatchButton(target: self, action: colorAction)
+            let button = MarkupColorSwatchButton(selected: color == selectedColor, target: self, action: colorAction)
             button.tag = index
             button.contentTintColor = color.nsColor
             button.toolTip = "\(color.title)\(accessibilityPrefix)"
@@ -346,12 +369,18 @@ private final class MarkupPDFView: PDFView, NSPopoverDelegate {
         readerLibrary?.applyHighlight(color: MarkupColor.allCases[sender.tag], to: contextMenuSelection)
     }
     @objc private func toggleNote() { readerLibrary?.toggleNoteAnnotation() }
-    @objc private func toggleUnderlineFromIcon() { readerLibrary?.underlineSelection() }
+    @objc private func toggleUnderlineFromIcon() {
+        guard let contextMenuSelection else { return }
+        readerLibrary?.toggleUnderline(in: contextMenuSelection)
+    }
     @objc private func applyUnderlineFromRow(_ sender: NSButton) {
         guard MarkupColor.allCases.indices.contains(sender.tag), let contextMenuSelection else { return }
         readerLibrary?.applyUnderline(color: MarkupColor.allCases[sender.tag], to: contextMenuSelection)
     }
-    @objc private func toggleStrikeOutFromIcon() { readerLibrary?.strikeOutSelection() }
+    @objc private func toggleStrikeOutFromIcon() {
+        guard let contextMenuSelection else { return }
+        readerLibrary?.toggleStrikeOut(in: contextMenuSelection)
+    }
     @objc private func applyStrikeOutFromRow(_ sender: NSButton) {
         guard MarkupColor.allCases.indices.contains(sender.tag), let contextMenuSelection else { return }
         readerLibrary?.applyStrikeOut(color: MarkupColor.allCases[sender.tag], to: contextMenuSelection)
