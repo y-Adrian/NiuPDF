@@ -87,7 +87,7 @@ private final class MarkupPDFView: PDFView {
         let menu = super.menu(for: event) ?? NSMenu()
         var editingItems: [NSMenuItem] = []
 
-        editingItems.append(colorRow(icon: "eraser", accessibilityPrefix: "高亮", iconAction: #selector(removeHighlights), colorAction: #selector(applyHighlightFromRow(_:)), selectedColor: readerLibrary?.selectedHighlightColor ?? .yellow, leadingSymbol: "highlighter"))
+        editingItems.append(colorRow(icon: "highlighter", accessibilityPrefix: "高亮", iconAction: #selector(highlightFromIcon), colorAction: #selector(applyHighlightFromRow(_:)), selectedColor: readerLibrary?.selectedHighlightColor ?? .yellow))
         editingItems.append(colorRow(icon: "underline", accessibilityPrefix: "下划线", iconAction: #selector(toggleUnderlineFromIcon), colorAction: #selector(applyUnderlineFromRow(_:)), selectedColor: readerLibrary?.selectedUnderlineColor ?? .yellow))
         editingItems.append(colorRow(icon: "strikethrough", accessibilityPrefix: "删除线", iconAction: #selector(toggleStrikeOutFromIcon), colorAction: #selector(applyStrikeOutFromRow(_:)), selectedColor: readerLibrary?.selectedStrikeOutColor ?? .yellow))
         let noteTitle = readerLibrary?.hasNoteAnnotationForSelection() == true ? "移除标注" : "添加标注"
@@ -134,7 +134,7 @@ private final class MarkupPDFView: PDFView {
         iconButton.imagePosition = .imageOnly
         iconButton.isBordered = false
         iconButton.setFrameSize(NSSize(width: 24, height: 24))
-        iconButton.toolTip = accessibilityPrefix == "高亮" ? "移除高亮" : "使用当前颜色切换\(accessibilityPrefix)"
+        iconButton.toolTip = accessibilityPrefix == "高亮" ? "添加当前颜色高亮" : "使用当前颜色切换\(accessibilityPrefix)"
         iconButton.setAccessibilityLabel(iconButton.toolTip ?? accessibilityPrefix)
         stack.addArrangedSubview(iconButton)
 
@@ -166,7 +166,7 @@ private final class MarkupPDFView: PDFView {
         return item
     }
 
-    @objc private func removeHighlights() { readerLibrary?.removeHighlights() }
+    @objc private func highlightFromIcon() { readerLibrary?.highlightSelection() }
     @objc private func applyHighlightFromRow(_ sender: NSButton) {
         guard MarkupColor.allCases.indices.contains(sender.tag) else { return }
         readerLibrary?.applyHighlight(color: MarkupColor.allCases[sender.tag])
