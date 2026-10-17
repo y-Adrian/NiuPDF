@@ -208,7 +208,7 @@ private final class MarkupPDFView: PDFView {
         initialColor: MarkupColor,
         apply: @escaping (MarkupColor) -> Void
     ) {
-        let panel = NSPanel(
+        let panel = MarkupColorPickerPanel(
             contentRect: NSRect(x: 0, y: 0, width: 300, height: 160),
             styleMask: [.titled, .closable, .utilityWindow],
             backing: .buffered,
@@ -237,6 +237,13 @@ private final class MarkupPDFView: PDFView {
     }
 
     private var colorPickerPanel: NSPanel?
+}
+
+private final class MarkupColorPickerPanel: NSPanel {
+    override func close() {
+        NSColorPanel.shared.close()
+        super.close()
+    }
 }
 
 private struct MarkupColorPickerPopover: View {
