@@ -152,6 +152,56 @@ struct PDFOutlineSidebar: View {
     }
 }
 
+struct SearchResultsSidebar: View {
+    let results: [PDFSelection]
+    let document: PDFDocument
+    let selectedIndex: Int
+    let onSelect: (Int) -> Void
+
+    var body: some View {
+        ScrollView {
+            LazyVStack(alignment: .leading, spacing: 6) {
+                ForEach(results.indices, id: \.self) { index in
+                    if let page = results[index].pages.first {
+                        Button { onSelect(index) } label: {
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text("第 \(document.index(for: page) + 1) 页")
+                                    .font(.caption.weight(.medium))
+                                    .foregroundStyle(.secondary)
+                                Text(context(for: results[index], on: page))
+                                    .font(.system(size: 12))
+                                    .foregroundStyle(.primary)
+                                    .lineLimit(3)
+                                    .multilineTextAlignment(.leading)
+                                    .frame(maxWidth: .infinity, alignment: .leading)
+                            }
+                            .padding(8)
+                            .background(selectedIndex == index ? Color.accentColor.opacity(0.12) : .clear,
+                                        in: RoundedRectangle(cornerRadius: 6))
+                            .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+            }
+            .padding(8)
+        }
+        .background(Color(nsColor: .controlBackgroundColor))
+    }
+
+    private func context(for selection: PDFSelection, on page: PDFPage) -> String {
+        guard let text = page.string, let needle = selection.string, !needle.isEmpty,
+              let range = text.range(of: needle, options: .caseInsensitive) else {
+            return selection.string ?? "无法提取匹配文本"
+        }
+        let start = text.index(range.lowerBound, offsetBy: -45, limitedBy: text.startIndex) ?? text.startIndex
+        let end = text.index(range.upperBound, offsetBy: 45, limitedBy: text.endIndex) ?? text.endIndex
+        return text[start..<end]
+            .split(whereSeparator: \.isWhitespace)
+            .joined(separator: " ")
+    }
+}
+
 private struct PDFOutlineEntry: View {
     let item: PDFOutline
     let document: PDFDocument

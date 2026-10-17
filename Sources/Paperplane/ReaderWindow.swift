@@ -18,6 +18,9 @@ struct ReaderWindow: View {
                             HStack(spacing: 2) {
                                 sidebarModeButton(.thumbnails, title: "缩略图", symbol: "square.grid.2x2")
                                 sidebarModeButton(.outline, title: "大纲", symbol: "list.bullet.indent")
+                                if !library.searchResults.isEmpty {
+                                    sidebarModeButton(.searchResults, title: "结果", symbol: "text.magnifyingglass")
+                                }
                             }
                             .padding(8)
                             Divider()
@@ -29,6 +32,14 @@ struct ReaderWindow: View {
                             case .outline:
                                 PDFOutlineSidebar(document: document) { index in
                                     library.goToPage(index + 1)
+                                }
+                            case .searchResults:
+                                SearchResultsSidebar(
+                                    results: library.searchResults,
+                                    document: document,
+                                    selectedIndex: library.searchResultIndex
+                                ) { index in
+                                    library.selectSearchResult(index)
                                 }
                             }
                         }
@@ -261,10 +272,17 @@ private struct SearchField: View {
                     if focused { library.focusSearch = false }
                 }
             if !library.searchText.isEmpty {
-                Text(library.searchResults.isEmpty ? "0 项" : "\(library.searchResultIndex + 1)/\(library.searchResults.count)")
-                    .font(.caption2)
-                    .foregroundStyle(.secondary)
-                    .fixedSize()
+                Button {
+                    library.isSidebarVisible = true
+                    library.sidebarMode = .searchResults
+                } label: {
+                    Text(library.searchResults.isEmpty ? "0 项" : "\(library.searchResultIndex + 1)/\(library.searchResults.count)")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                        .fixedSize()
+                }
+                .buttonStyle(.plain)
+                .disabled(library.searchResults.isEmpty)
                 Button { library.moveSearchResult(-1) } label: { Image(systemName: "chevron.up") }
                     .disabled(library.searchResults.isEmpty)
                 Button { library.moveSearchResult(1) } label: { Image(systemName: "chevron.down") }
@@ -276,6 +294,17 @@ private struct SearchField: View {
                     .buttonStyle(.plain)
                     .foregroundStyle(.tertiary)
             }
+            Menu {
+                Toggle("区分大小写", isOn: $library.isCaseSensitiveSearch)
+                Toggle("全字匹配", isOn: $library.isWholeWordSearch)
+            } label: {
+                Image(systemName: "line.3.horizontal.decrease")
+                    .foregroundStyle(.secondary)
+            }
+            .menuStyle(.borderlessButton)
+            .help("搜索选项")
+            .onChange(of: library.isCaseSensitiveSearch) { _ in library.find(library.searchText) }
+            .onChange(of: library.isWholeWordSearch) { _ in library.find(library.searchText) }
         }
         .padding(.horizontal, 9)
         .padding(.vertical, 6)

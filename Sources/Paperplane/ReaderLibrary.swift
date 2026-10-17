@@ -35,6 +35,7 @@ enum ReaderLayout: String, CaseIterable, Identifiable {
 enum SidebarMode {
     case thumbnails
     case outline
+    case searchResults
 }
 
 @MainActor
@@ -47,6 +48,8 @@ final class ReaderLibrary: ObservableObject {
     @Published var searchText = ""
     @Published var searchResults: [PDFSelection] = []
     @Published var searchResultIndex = 0
+    @Published var isCaseSensitiveSearch = false
+    @Published var isWholeWordSearch = false
     @Published var focusSearch = false
     @Published var isSidebarVisible = true
     @Published var sidebarMode: SidebarMode = .thumbnails
@@ -252,7 +255,17 @@ final class ReaderLibrary: ObservableObject {
             pdfView?.highlightedSelections = nil
             return
         }
-        searchResults = document.findString(text, withOptions: [.caseInsensitive])
+        var options: NSString.CompareOptions = []
+        if !isCaseSensitiveSearch { options.insert(.caseInsensitive) }
+        let query: String
+        if isWholeWordSearch {
+            let escapedText = NSRegularExpression.escapedPattern(for: text)
+            query = "(?<![\\p{L}\\p{N}_])\(escapedText)(?![\\p{L}\\p{N}_])"
+            options.insert(.regularExpression)
+        } else {
+            query = text
+        }
+        searchResults = document.findString(query, withOptions: options)
         searchResultIndex = 0
         pdfView?.highlightedSelections = searchResults
         showCurrentSearchResult()
@@ -261,6 +274,12 @@ final class ReaderLibrary: ObservableObject {
     func moveSearchResult(_ delta: Int) {
         guard !searchResults.isEmpty else { return }
         searchResultIndex = (searchResultIndex + delta + searchResults.count) % searchResults.count
+        showCurrentSearchResult()
+    }
+
+    func selectSearchResult(_ index: Int) {
+        guard searchResults.indices.contains(index) else { return }
+        searchResultIndex = index
         showCurrentSearchResult()
     }
 
