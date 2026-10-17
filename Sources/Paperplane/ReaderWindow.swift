@@ -298,7 +298,7 @@ private struct SearchField: View {
                 library.isCaseSensitiveSearch.toggle()
                 library.find(library.searchText)
             }
-            searchOptionButton("ab", label: "全词匹配", isActive: library.isWholeWordSearch, underlined: true) {
+            searchOptionButton("ab", label: "全词匹配", isActive: library.isWholeWordSearch, usesWordBracket: true) {
                 library.isWholeWordSearch.toggle()
                 library.find(library.searchText)
             }
@@ -317,15 +317,17 @@ private struct SearchField: View {
         _ title: String,
         label: String,
         isActive: Bool,
-        underlined: Bool = false,
+        usesWordBracket: Bool = false,
         action: @escaping () -> Void
     ) -> some View {
         Button(action: action) {
             Group {
-                if underlined {
+                if usesWordBracket {
                     VStack(spacing: -3) {
                         Text(title)
-                        Capsule().frame(width: 17, height: 1.5)
+                        WholeWordBracket()
+                            .stroke(style: StrokeStyle(lineWidth: 1.35, lineCap: .round, lineJoin: .round))
+                            .frame(width: 17, height: 5)
                     }
                 } else {
                     Text(title)
@@ -342,5 +344,17 @@ private struct SearchField: View {
         .accessibilityLabel(label)
         .accessibilityValue(isActive ? "开启" : "关闭")
         .help("\(label)：\(isActive ? "已启用" : "已关闭")")
+    }
+}
+
+private struct WholeWordBracket: Shape {
+    func path(in rect: CGRect) -> Path {
+        let inset: CGFloat = 1
+        var path = Path()
+        path.move(to: CGPoint(x: inset, y: rect.minY))
+        path.addLine(to: CGPoint(x: inset, y: rect.maxY - inset))
+        path.addLine(to: CGPoint(x: rect.maxX - inset, y: rect.maxY - inset))
+        path.addLine(to: CGPoint(x: rect.maxX - inset, y: rect.minY))
+        return path
     }
 }
