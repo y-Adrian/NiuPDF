@@ -38,29 +38,40 @@ enum SidebarMode {
     case searchResults
 }
 
-enum MarkupColor: String, CaseIterable, Identifiable {
-    case yellow, green, blue, pink, purple
+struct MarkupColor: Identifiable, Hashable {
+    let hex: String
+    let title: String
 
-    var id: String { rawValue }
-
-    var title: String {
-        switch self {
-        case .yellow: "黄色"
-        case .green: "绿色"
-        case .blue: "蓝色"
-        case .pink: "粉色"
-        case .purple: "紫色"
-        }
+    var id: String { hex }
+    var nsColor: NSColor {
+        let value = UInt32(hex, radix: 16) ?? 0
+        return NSColor(
+            calibratedRed: CGFloat((value >> 16) & 0xFF) / 255,
+            green: CGFloat((value >> 8) & 0xFF) / 255,
+            blue: CGFloat(value & 0xFF) / 255,
+            alpha: 1
+        )
     }
 
-    var nsColor: NSColor {
-        switch self {
-        case .yellow: NSColor(calibratedRed: 1, green: 0.82, blue: 0.16, alpha: 1)
-        case .green: NSColor(calibratedRed: 0.30, green: 0.78, blue: 0.42, alpha: 1)
-        case .blue: NSColor(calibratedRed: 0.22, green: 0.55, blue: 0.96, alpha: 1)
-        case .pink: NSColor(calibratedRed: 0.96, green: 0.38, blue: 0.58, alpha: 1)
-        case .purple: NSColor(calibratedRed: 0.64, green: 0.40, blue: 0.88, alpha: 1)
-        }
+    init(hex: String, title: String = "自定义颜色") {
+        self.hex = hex.uppercased()
+        self.title = title
+    }
+
+    static let yellow = MarkupColor(hex: "FFD129", title: "黄色")
+    static let green = MarkupColor(hex: "4DC76B", title: "绿色")
+    static let blue = MarkupColor(hex: "388CF5", title: "蓝色")
+    static let pink = MarkupColor(hex: "F56194", title: "粉色")
+    static let purple = MarkupColor(hex: "A366E0", title: "紫色")
+    static let allCases = [yellow, green, blue, pink, purple]
+
+    static func custom(hex: String) -> MarkupColor? {
+        let normalized = hex.trimmingCharacters(in: .whitespacesAndNewlines)
+            .replacingOccurrences(of: "#", with: "")
+        guard normalized.count == 6,
+              normalized.unicodeScalars.allSatisfy(CharacterSet(charactersIn: "0123456789abcdefABCDEF").contains)
+        else { return nil }
+        return MarkupColor(hex: normalized)
     }
 }
 
