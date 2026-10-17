@@ -38,6 +38,32 @@ enum SidebarMode {
     case searchResults
 }
 
+enum MarkupColor: String, CaseIterable, Identifiable {
+    case yellow, green, blue, pink, purple
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .yellow: "黄色"
+        case .green: "绿色"
+        case .blue: "蓝色"
+        case .pink: "粉色"
+        case .purple: "紫色"
+        }
+    }
+
+    var nsColor: NSColor {
+        switch self {
+        case .yellow: NSColor(calibratedRed: 1, green: 0.82, blue: 0.16, alpha: 1)
+        case .green: NSColor(calibratedRed: 0.30, green: 0.78, blue: 0.42, alpha: 1)
+        case .blue: NSColor(calibratedRed: 0.22, green: 0.55, blue: 0.96, alpha: 1)
+        case .pink: NSColor(calibratedRed: 0.96, green: 0.38, blue: 0.58, alpha: 1)
+        case .purple: NSColor(calibratedRed: 0.64, green: 0.40, blue: 0.88, alpha: 1)
+        }
+    }
+}
+
 @MainActor
 final class ReaderLibrary: ObservableObject {
     @Published var document: PDFDocument?
@@ -51,6 +77,7 @@ final class ReaderLibrary: ObservableObject {
     @Published var isCaseSensitiveSearch = false
     @Published var isWholeWordSearch = false
     @Published var isRegularExpressionSearch = false
+    @Published var selectedMarkupColor: MarkupColor = .yellow
     @Published var focusSearch = false
     @Published var isSidebarVisible = true
     @Published var sidebarMode: SidebarMode = .thumbnails
@@ -302,15 +329,15 @@ final class ReaderLibrary: ObservableObject {
     }
 
     func highlightSelection() {
-        addTextMarkup(type: .highlight, color: NSColor.systemYellow.withAlphaComponent(0.42), label: "高亮")
+        addTextMarkup(type: .highlight, color: selectedMarkupColor.nsColor.withAlphaComponent(0.42), label: "高亮")
     }
 
     func underlineSelection() {
-        addTextMarkup(type: .underline, color: .systemBlue, label: "下划线")
+        addTextMarkup(type: .underline, color: selectedMarkupColor.nsColor, label: "下划线")
     }
 
     func strikeOutSelection() {
-        addTextMarkup(type: .strikeOut, color: .systemRed, label: "删除线")
+        addTextMarkup(type: .strikeOut, color: selectedMarkupColor.nsColor, label: "删除线")
     }
 
     private func addTextMarkup(type: PDFAnnotationSubtype, color: NSColor, label: String) {

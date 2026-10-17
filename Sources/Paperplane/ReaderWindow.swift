@@ -121,6 +121,28 @@ struct ReaderWindow: View {
                 .disabled(library.document == nil)
                 .help("放大")
 
+            Menu {
+                ForEach(MarkupColor.allCases) { color in
+                    Button {
+                        library.selectedMarkupColor = color
+                    } label: {
+                        HStack {
+                            Circle().fill(Color(nsColor: color.nsColor)).frame(width: 10, height: 10)
+                            Text(color.title)
+                            if library.selectedMarkupColor == color {
+                                Image(systemName: "checkmark")
+                            }
+                        }
+                    }
+                }
+            } label: {
+                Image(systemName: "circle.fill")
+                    .foregroundStyle(Color(nsColor: library.selectedMarkupColor.nsColor))
+            }
+            .menuStyle(.borderlessButton)
+            .disabled(library.document == nil)
+            .help("选择标注颜色")
+
             Button { library.highlightSelection() } label: {
                 Image(systemName: "highlighter")
             }
