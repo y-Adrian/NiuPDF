@@ -76,9 +76,60 @@ struct PDFCanvas: NSViewRepresentable {
 }
 
 /// Adds native PDF text markup actions to the selected text's contextual menu.
-private final class MarkupPDFView: PDFView {
+private final class MarkupPDFView: PDFView, NSPopoverDelegate {
     weak var readerLibrary: ReaderLibrary?
     private var contextMenuSelection: PDFSelection?
+    private var notePopover: NSPopover?
+    private weak var expandedNote: CommentBubblePDFAnnotation?
+
+    override func mouseDown(with event: NSEvent) {
+        let viewPoint = convert(event.locationInWindow, from: nil)
+        if let page = page(for: viewPoint, nearest: false) {
+            let pagePoint = convert(viewPoint, to: page)
+            if let note = page.annotation(at: pagePoint) as? CommentBubblePDFAnnotation {
+                toggleNotePopover(note, on: page)
+                return
+            }
+        }
+        super.mouseDown(with: event)
+    }
+
+    private func toggleNotePopover(_ note: CommentBubblePDFAnnotation, on page: PDFPage) {
+        if expandedNote === note, notePopover?.isShown == true {
+            notePopover?.performClose(nil)
+            return
+        }
+        closeNotePopover()
+
+        let popover = NSPopover()
+        popover.behavior = .semitransient
+        popover.delegate = self
+        popover.contentViewController = CommentNotePopoverViewController(note: note) { [weak self, weak note] contents in
+            note?.contents = contents
+            self?.needsDisplay = true
+        }
+        note.isExpanded = true
+        expandedNote = note
+        notePopover = popover
+        needsDisplay = true
+        popover.show(relativeTo: convert(note.bounds, from: page), of: self, preferredEdge: .maxY)
+    }
+
+    private func closeNotePopover() {
+        notePopover?.delegate = nil
+        if notePopover?.isShown == true { notePopover?.performClose(nil) }
+        expandedNote?.isExpanded = false
+        expandedNote = nil
+        notePopover = nil
+        needsDisplay = true
+    }
+
+    func popoverDidClose(_ notification: Notification) {
+        expandedNote?.isExpanded = false
+        expandedNote = nil
+        notePopover = nil
+        needsDisplay = true
+    }
 
     override func menu(for event: NSEvent) -> NSMenu? {
         guard let selection = selectionForContextMenu(at: event),

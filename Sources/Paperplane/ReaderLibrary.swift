@@ -6,30 +6,76 @@ import SwiftUI
 /// Renders a compact speech bubble while keeping the PDF's standard `/Text`
 /// annotation type so other readers can still inspect and edit its contents.
 final class CommentBubblePDFAnnotation: PDFAnnotation {
+    var isExpanded = false
+
     override func draw(with box: PDFDisplayBox, in context: CGContext) {
         let rect = bounds.standardized
         guard rect.width > 6, rect.height > 6 else { return }
 
-        let tint = NSColor(calibratedRed: 0.48, green: 0.34, blue: 0.10, alpha: 1)
-        let symbolConfiguration = NSImage.SymbolConfiguration(
-            pointSize: min(rect.width, rect.height) * 0.86,
-            weight: .medium
-        ).applying(NSImage.SymbolConfiguration(hierarchicalColor: tint))
-        guard let symbol = NSImage(systemSymbolName: "text.bubble", accessibilityDescription: "评论")?
-            .withSymbolConfiguration(symbolConfiguration) else { return }
+        let side = min(rect.width * 0.76, rect.height * 0.76)
+        let height = side * sqrt(3) / 2
+        let centerX = rect.midX
+        let centerY = rect.midY
+        let path = CGMutablePath()
+        if isExpanded {
+            path.move(to: CGPoint(x: centerX, y: centerY + height * 0.58))
+            path.addLine(to: CGPoint(x: centerX - side / 2, y: centerY - height * 0.42))
+            path.addLine(to: CGPoint(x: centerX + side / 2, y: centerY - height * 0.42))
+        } else {
+            path.move(to: CGPoint(x: centerX, y: centerY - height * 0.58))
+            path.addLine(to: CGPoint(x: centerX - side / 2, y: centerY + height * 0.42))
+            path.addLine(to: CGPoint(x: centerX + side / 2, y: centerY + height * 0.42))
+        }
+        path.closeSubpath()
 
-        let fit = min(rect.width / symbol.size.width, rect.height / symbol.size.height)
-        let size = CGSize(width: symbol.size.width * fit, height: symbol.size.height * fit)
-        let imageRect = CGRect(
-            x: rect.midX - size.width / 2,
-            y: rect.midY - size.height / 2,
-            width: size.width,
-            height: size.height
-        )
-        NSGraphicsContext.saveGraphicsState()
-        NSGraphicsContext.current = NSGraphicsContext(cgContext: context, flipped: false)
-        symbol.draw(in: imageRect, from: .zero, operation: .sourceOver, fraction: 1)
-        NSGraphicsContext.restoreGraphicsState()
+        context.saveGState()
+        context.setAllowsAntialiasing(true)
+        context.setShouldAntialias(true)
+        context.setFillColor(NSColor(calibratedRed: 1, green: 0.80, blue: 0.20, alpha: 1).cgColor)
+        context.setStrokeColor(NSColor(calibratedRed: 0.45, green: 0.31, blue: 0.08, alpha: 1).cgColor)
+        context.setLineWidth(0.8)
+        context.setLineJoin(.round)
+        context.addPath(path)
+        context.drawPath(using: .fillStroke)
+        context.restoreGState()
+    }
+}
+
+final class CommentNotePopoverViewController: NSViewController, NSTextViewDelegate {
+    private let note: PDFAnnotation
+    private let onChange: (String) -> Void
+    private let textView = NSTextView()
+
+    init(note: PDFAnnotation, onChange: @escaping (String) -> Void) {
+        self.note = note
+        self.onChange = onChange
+        super.init(nibName: nil, bundle: nil)
+    }
+
+    required init?(coder: NSCoder) { nil }
+
+    override func loadView() {
+        let container = NSView(frame: NSRect(x: 0, y: 0, width: 280, height: 160))
+        let scrollView = NSScrollView(frame: NSRect(x: 8, y: 8, width: 264, height: 144))
+        scrollView.hasVerticalScroller = true
+        scrollView.borderType = .noBorder
+        textView.frame = NSRect(x: 0, y: 0, width: 264, height: 144)
+        textView.minSize = NSSize(width: 0, height: 144)
+        textView.maxSize = NSSize(width: CGFloat.greatestFiniteMagnitude, height: CGFloat.greatestFiniteMagnitude)
+        textView.isVerticallyResizable = true
+        textView.isHorizontallyResizable = false
+        textView.autoresizingMask = [.width]
+        textView.textContainer?.widthTracksTextView = true
+        textView.font = .systemFont(ofSize: 13)
+        textView.string = note.contents ?? ""
+        textView.delegate = self
+        scrollView.documentView = textView
+        container.addSubview(scrollView)
+        view = container
+    }
+
+    func textDidChange(_ notification: Notification) {
+        onChange(textView.string)
     }
 }
 
