@@ -321,8 +321,16 @@ private struct SearchField: View {
         action: @escaping () -> Void
     ) -> some View {
         Button(action: action) {
-            Text(title)
-                .underline(underlined)
+            Group {
+                if underlined {
+                    VStack(spacing: -3) {
+                        Text(title)
+                        Capsule().frame(width: 17, height: 1.5)
+                    }
+                } else {
+                    Text(title)
+                }
+            }
                 .font(.system(size: 15, weight: .medium, design: .rounded))
                 .foregroundStyle(isActive ? Color.accentColor : Color.secondary)
                 .frame(minWidth: 22, minHeight: 22)
