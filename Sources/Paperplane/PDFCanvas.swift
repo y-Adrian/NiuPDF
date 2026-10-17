@@ -135,6 +135,38 @@ private final class MarkupToolIconButton: NSButton {
     }
 }
 
+private final class MarkupColorSwatchButton: NSButton {
+    private let isSelectedColor: Bool
+
+    init(selected: Bool, target: AnyObject, action: Selector) {
+        isSelectedColor = selected
+        super.init(frame: .zero)
+        title = ""
+        self.target = target
+        self.action = action
+        image = NSImage(systemSymbolName: "circle.fill", accessibilityDescription: nil)
+        imagePosition = .imageOnly
+        isBordered = false
+        setContentHuggingPriority(.required, for: .horizontal)
+        setContentHuggingPriority(.required, for: .vertical)
+        setContentCompressionResistancePriority(.required, for: .horizontal)
+        setContentCompressionResistancePriority(.required, for: .vertical)
+    }
+
+    required init?(coder: NSCoder) { nil }
+
+    override var intrinsicContentSize: NSSize { NSSize(width: 24, height: 24) }
+
+    override func draw(_ dirtyRect: NSRect) {
+        super.draw(dirtyRect)
+        guard isSelectedColor else { return }
+        NSColor.white.withAlphaComponent(0.95).setStroke()
+        let ring = NSBezierPath(ovalIn: bounds.insetBy(dx: 2.5, dy: 2.5))
+        ring.lineWidth = 1.5
+        ring.stroke()
+    }
+}
+
 /// Adds native PDF text markup actions to the selected text's contextual menu.
 private final class MarkupPDFView: PDFView, NSPopoverDelegate {
     weak var readerLibrary: ReaderLibrary?
@@ -293,6 +325,7 @@ private final class MarkupPDFView: PDFView, NSPopoverDelegate {
         stack.distribution = .fill
         stack.spacing = 4
         stack.edgeInsets = NSEdgeInsets(top: 2, left: 10, bottom: 2, right: 10)
+        stack.setContentHuggingPriority(.required, for: .horizontal)
 
         let iconButton = MarkupToolIconButton(style: iconStyle, target: self, action: iconAction)
         iconButton.setFrameSize(NSSize(width: 24, height: 24))
@@ -301,22 +334,11 @@ private final class MarkupPDFView: PDFView, NSPopoverDelegate {
         stack.addArrangedSubview(iconButton)
 
         for (index, color) in MarkupColor.allCases.enumerated() {
-            let button = NSButton(title: "", target: self, action: colorAction)
+            let button = MarkupColorSwatchButton(selected: color == selectedColor, target: self, action: colorAction)
             button.tag = index
-            button.image = NSImage(systemSymbolName: "circle.fill", accessibilityDescription: color.title)
-            button.imagePosition = .imageOnly
-            button.isBordered = false
             button.contentTintColor = color.nsColor
-            button.setFrameSize(NSSize(width: 24, height: 24))
             button.toolTip = "\(color.title)\(accessibilityPrefix)"
             button.setAccessibilityLabel(button.toolTip ?? color.title)
-            if color == selectedColor {
-                button.layer = CALayer()
-                button.wantsLayer = true
-                button.layer?.borderColor = NSColor.secondaryLabelColor.cgColor
-                button.layer?.borderWidth = 1
-                button.layer?.cornerRadius = 12
-            }
             stack.addArrangedSubview(button)
         }
 
