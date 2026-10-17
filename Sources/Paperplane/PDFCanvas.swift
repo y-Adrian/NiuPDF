@@ -190,11 +190,8 @@ private final class MarkupColorSwatchButton: NSButton {
 
 /// Adds native PDF text markup actions to the selected text's contextual menu.
 private final class MarkupPDFView: PDFView, NSPopoverDelegate {
-    private static var sharedNativeAddNoteAction: Selector?
-
     weak var readerLibrary: ReaderLibrary?
     private var contextMenuSelection: PDFSelection?
-    private var nativeAddNoteAction: Selector?
     private var notePopover: NSPopover?
     private weak var expandedNote: CommentBubblePDFAnnotation?
     private var noteIconAnimationTimer: Timer?
@@ -281,37 +278,14 @@ private final class MarkupPDFView: PDFView, NSPopoverDelegate {
         setCurrentSelection(selection, animate: false)
         let menu = super.menu(for: event) ?? NSMenu()
         removeLegacyMarkupItems(from: menu)
-        let nativeNoteItem = takeNativeNoteItem(from: menu)
-        if nativeNoteItem?.title.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() == "add note",
-           let action = nativeNoteItem?.action {
-            // Only cache actions owned by this PDFView. A target tied to an
-            // existing annotation/selection cannot safely be reused for plain text.
-            if nativeNoteItem?.target == nil || nativeNoteItem?.target === self {
-                nativeAddNoteAction = action
-                Self.sharedNativeAddNoteAction = action
-            }
-        }
+        _ = takeNativeNoteItem(from: menu)
         var editingItems: [NSMenuItem] = []
 
         editingItems.append(colorRow(iconStyle: .highlight, accessibilityPrefix: "高亮", iconAction: #selector(highlightFromIcon), colorAction: #selector(applyHighlightFromRow(_:)), selectedColor: readerLibrary?.selectedHighlightColor ?? .yellow))
         editingItems.append(colorRow(iconStyle: .underline, accessibilityPrefix: "下划线", iconAction: #selector(toggleUnderlineFromIcon), colorAction: #selector(applyUnderlineFromRow(_:)), selectedColor: readerLibrary?.selectedUnderlineColor ?? .yellow))
         editingItems.append(colorRow(iconStyle: .strikethrough, accessibilityPrefix: "删除线", iconAction: #selector(toggleStrikeOutFromIcon), colorAction: #selector(applyStrikeOutFromRow(_:)), selectedColor: readerLibrary?.selectedStrikeOutColor ?? .yellow))
         let hasNote = readerLibrary?.hasNoteAnnotation(in: selection) == true
-        if hasNote {
-            if let nativeNoteItem,
-               nativeNoteItem.title.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() == "remove note" {
-                editingItems.append(nativeNoteItem)
-            } else {
-                editingItems.append(actionItem("Remove Note", action: #selector(toggleNote)))
-            }
-        } else if let nativeNoteItem,
-                  nativeNoteItem.title.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() == "add note" {
-            editingItems.append(nativeNoteItem)
-        } else if let nativeItem = cachedNativeAddNoteItem() {
-            editingItems.append(nativeItem)
-        } else {
-            editingItems.append(actionItem("Add Note", action: #selector(toggleNote)))
-        }
+        editingItems.append(actionItem(hasNote ? "Remove Note" : "Add Note", action: #selector(toggleNote)))
         editingItems.append(.separator())
 
         for item in editingItems.reversed() { menu.insertItem(item, at: 0) }
@@ -325,16 +299,6 @@ private final class MarkupPDFView: PDFView, NSPopoverDelegate {
         }) else { return nil }
         let item = menu.item(at: index)
         menu.removeItem(at: index)
-        return item
-    }
-
-    private func cachedNativeAddNoteItem() -> NSMenuItem? {
-        guard let action = nativeAddNoteAction ?? Self.sharedNativeAddNoteAction else { return nil }
-        guard responds(to: action) else { return nil }
-        let item = NSMenuItem(title: "Add Note", action: action, keyEquivalent: "")
-        // Dispatch the PDFKit selector on the PDFView whose current selection
-        // was captured for this menu, never on a stale menu/annotation target.
-        item.target = self
         return item
     }
 
@@ -427,7 +391,11 @@ private final class MarkupPDFView: PDFView, NSPopoverDelegate {
         readerLibrary?.applyHighlight(color: MarkupColor.allCases[sender.tag], to: contextMenuSelection)
         updateSelectedSwatch(in: sender)
     }
-    @objc private func toggleNote() { readerLibrary?.toggleNoteAnnotation() }
+    @objc private func toggleNote() {
+        guard let contextMenuSelection,
+              let note = readerLibrary?.toggleNoteAnnotation(in: contextMenuSelection) else { return }
+        toggleNotePopover(note.annotation, on: note.page)
+    }
     @objc private func toggleUnderlineFromIcon() {
         guard let contextMenuSelection else { return }
         readerLibrary?.toggleUnderline(in: contextMenuSelection)

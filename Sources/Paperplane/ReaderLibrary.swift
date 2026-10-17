@@ -3,46 +3,52 @@ import PDFKit
 import PaperplaneCore
 import SwiftUI
 
-/// Renders a line-height-scaled triangle while keeping a standard `/Text`
-/// annotation so other readers can still inspect and edit its contents.
+/// Renders a vector comment bubble while keeping a standard `/Text` annotation
+/// so other PDF readers can inspect and edit its contents.
 final class CommentBubblePDFAnnotation: PDFAnnotation {
-    var triangleHeight: CGFloat = 6
     var expansionProgress: CGFloat = 0
 
     override func draw(with box: PDFDisplayBox, in context: CGContext) {
         let rect = bounds
-        guard rect.width > 6, rect.height > 6 else { return }
-
-        let height = min(triangleHeight, min(rect.height * 0.8, rect.width * 0.8 * sqrt(3) / 2))
-        let side = height * 2 / sqrt(3)
-        let center = CGPoint(x: rect.midX, y: rect.midY)
-        let angle = .pi * min(max(expansionProgress, 0), 1)
-        let cosine = cos(angle)
-        let sine = sin(angle)
-        func rotate(_ point: CGPoint) -> CGPoint {
-            let dx = point.x - center.x
-            let dy = point.y - center.y
-            return CGPoint(
-                x: center.x + dx * cosine - dy * sine,
-                y: center.y + dx * sine + dy * cosine
-            )
-        }
-
-        let path = CGMutablePath()
-        path.move(to: rotate(CGPoint(x: center.x - side / 2, y: center.y + height / 3)))
-        path.addLine(to: rotate(CGPoint(x: center.x + side / 2, y: center.y + height / 3)))
-        path.addLine(to: rotate(CGPoint(x: center.x, y: center.y - height * 2 / 3)))
-        path.closeSubpath()
+        guard rect.width > 8, rect.height > 8 else { return }
 
         context.saveGState()
         context.setAllowsAntialiasing(true)
         context.setShouldAntialias(true)
-        context.setFillColor(NSColor.systemYellow.cgColor)
-        context.setStrokeColor(NSColor(calibratedRed: 0.42, green: 0.30, blue: 0.08, alpha: 1).cgColor)
-        context.setLineWidth(max(0.45, height * 0.12))
-        context.setLineJoin(.round)
+        let progress = min(max(expansionProgress, 0), 1)
+        let scale = 1 + progress * 0.08
+        context.translateBy(x: rect.midX, y: rect.midY)
+        context.scaleBy(x: scale, y: scale)
+        context.translateBy(x: -rect.midX, y: -rect.midY)
+
+        let bubbleRect = CGRect(
+            x: rect.minX + rect.width * 0.08,
+            y: rect.minY + rect.height * 0.2,
+            width: rect.width * 0.84,
+            height: rect.height * 0.7
+        )
+        let path = CGMutablePath()
+        path.addRoundedRect(
+            in: bubbleRect,
+            cornerWidth: rect.width * 0.2,
+            cornerHeight: rect.height * 0.2
+        )
+        path.move(to: CGPoint(x: rect.minX + rect.width * 0.3, y: bubbleRect.minY + 1))
+        path.addLine(to: CGPoint(x: rect.minX + rect.width * 0.22, y: rect.minY + rect.height * 0.04))
+        path.addLine(to: CGPoint(x: rect.minX + rect.width * 0.52, y: bubbleRect.minY + 1))
+        path.closeSubpath()
         context.addPath(path)
-        context.drawPath(using: .fillStroke)
+        context.setFillColor(NSColor.systemRed.cgColor)
+        context.fillPath()
+
+        context.setStrokeColor(NSColor.white.cgColor)
+        context.setLineWidth(max(0.8, rect.width * 0.07))
+        context.setLineCap(.round)
+        context.move(to: CGPoint(x: bubbleRect.minX + bubbleRect.width * 0.24, y: bubbleRect.midY + bubbleRect.height * 0.13))
+        context.addLine(to: CGPoint(x: bubbleRect.maxX - bubbleRect.width * 0.24, y: bubbleRect.midY + bubbleRect.height * 0.13))
+        context.move(to: CGPoint(x: bubbleRect.minX + bubbleRect.width * 0.24, y: bubbleRect.midY - bubbleRect.height * 0.16))
+        context.addLine(to: CGPoint(x: bubbleRect.maxX - bubbleRect.width * 0.24, y: bubbleRect.midY - bubbleRect.height * 0.16))
+        context.strokePath()
         context.restoreGState()
     }
 }
@@ -478,23 +484,27 @@ final class ReaderLibrary: ObservableObject {
         replaceTextMarkup(type: .strikeOut, color: color.nsColor, selection: selection)
     }
 
-    func toggleNoteAnnotation() {
-        guard let selection = selectedText else { return }
+    func toggleNoteAnnotation(in selection: PDFSelection) -> (annotation: CommentBubblePDFAnnotation, page: PDFPage)? {
         if hasAnnotation(ofType: .text, in: selection) {
             removeAnnotations(ofType: .text, in: selection)
+            refreshPDFView()
+            return nil
         } else {
+            var firstNote: (annotation: CommentBubblePDFAnnotation, page: PDFPage)?
             for page in selection.pages {
                 let selectionBounds = selection.bounds(for: page)
                 guard !selectionBounds.isNull, !selectionBounds.isEmpty else { continue }
                 let noteBounds = commentIconBounds(for: selectionBounds, on: page)
-                let note = PDFAnnotation(bounds: noteBounds, forType: .text, withProperties: nil)
+                let note = CommentBubblePDFAnnotation(bounds: noteBounds, forType: .text, withProperties: nil)
                 note.iconType = .comment
-                note.color = .systemYellow
+                note.color = .systemRed
                 note.contents = ""
                 page.addAnnotation(note)
+                if firstNote == nil { firstNote = (note, page) }
             }
+            refreshPDFView()
+            return firstNote
         }
-        refreshPDFView()
     }
 
     private func commentIconBounds(for selectionBounds: CGRect, on page: PDFPage) -> CGRect {
