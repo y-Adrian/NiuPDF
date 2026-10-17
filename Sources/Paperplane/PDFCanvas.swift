@@ -160,20 +160,18 @@ private final class MarkupColorSwatchButton: NSButton {
     override var intrinsicContentSize: NSSize { NSSize(width: 24, height: 24) }
 
     override func draw(_ dirtyRect: NSRect) {
+        if isSelectedColor {
+            let shadow = NSShadow()
+            shadow.shadowColor = NSColor.black.withAlphaComponent(0.55)
+            shadow.shadowBlurRadius = 3
+            shadow.shadowOffset = NSSize(width: 0, height: -1)
+            NSGraphicsContext.saveGraphicsState()
+            shadow.set()
+            NSColor.black.withAlphaComponent(0.55).setFill()
+            NSBezierPath(ovalIn: bounds.insetBy(dx: 5, dy: 5)).fill()
+            NSGraphicsContext.restoreGraphicsState()
+        }
         super.draw(dirtyRect)
-        guard isSelectedColor else { return }
-
-        let ring = NSBezierPath(ovalIn: bounds.insetBy(dx: 2.5, dy: 2.5))
-        ring.lineWidth = 1.5
-        let shadow = NSShadow()
-        shadow.shadowColor = NSColor.black.withAlphaComponent(0.45)
-        shadow.shadowBlurRadius = 3
-        shadow.shadowOffset = NSSize(width: 0, height: -1)
-        NSGraphicsContext.saveGraphicsState()
-        shadow.set()
-        NSColor.white.setStroke()
-        ring.stroke()
-        NSGraphicsContext.restoreGraphicsState()
     }
 }
 
