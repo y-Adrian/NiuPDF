@@ -195,7 +195,6 @@ private final class MarkupPDFView: PDFView, NSPopoverDelegate {
     weak var readerLibrary: ReaderLibrary?
     private var contextMenuSelection: PDFSelection?
     private var nativeAddNoteAction: Selector?
-    private weak var nativeAddNoteTarget: AnyObject?
     private var notePopover: NSPopover?
     private weak var expandedNote: CommentBubblePDFAnnotation?
     private var noteIconAnimationTimer: Timer?
@@ -285,9 +284,10 @@ private final class MarkupPDFView: PDFView, NSPopoverDelegate {
         let nativeNoteItem = takeNativeNoteItem(from: menu)
         if nativeNoteItem?.title.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() == "add note",
            let action = nativeNoteItem?.action {
-            nativeAddNoteAction = action
-            nativeAddNoteTarget = nativeNoteItem?.target
+            // Only cache actions owned by this PDFView. A target tied to an
+            // existing annotation/selection cannot safely be reused for plain text.
             if nativeNoteItem?.target == nil || nativeNoteItem?.target === self {
+                nativeAddNoteAction = action
                 Self.sharedNativeAddNoteAction = action
             }
         }
@@ -330,8 +330,11 @@ private final class MarkupPDFView: PDFView, NSPopoverDelegate {
 
     private func cachedNativeAddNoteItem() -> NSMenuItem? {
         guard let action = nativeAddNoteAction ?? Self.sharedNativeAddNoteAction else { return nil }
+        guard responds(to: action) else { return nil }
         let item = NSMenuItem(title: "Add Note", action: action, keyEquivalent: "")
-        item.target = nativeAddNoteTarget ?? self
+        // Dispatch the PDFKit selector on the PDFView whose current selection
+        // was captured for this menu, never on a stale menu/annotation target.
+        item.target = self
         return item
     }
 
