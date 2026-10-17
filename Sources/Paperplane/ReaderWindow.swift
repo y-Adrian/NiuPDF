@@ -78,12 +78,19 @@ struct ReaderWindow: View {
             Button { library.zoom(by: 0.85) } label: { Image(systemName: "minus.magnifyingglass") }
                 .disabled(library.document == nil)
                 .help("缩小")
-            Button { library.setZoom(1) } label: { Text("\(Int(library.zoomScale * 100))%") }
-                .buttonStyle(.plain)
-                .foregroundStyle(.secondary)
-                .frame(minWidth: 42)
-                .disabled(library.document == nil)
-                .help("重设缩放")
+            Menu {
+                Button("适合宽度") { library.fitWidth() }
+                Button("适合页面") { library.fitPage() }
+                Divider()
+                Button("实际大小（100%）") { library.setZoom(1) }
+            } label: {
+                Text("\(Int(library.zoomScale * 100))%")
+                    .foregroundStyle(.secondary)
+                    .frame(minWidth: 42)
+            }
+            .menuStyle(.borderlessButton)
+            .disabled(library.document == nil)
+            .help("缩放选项")
             Button { library.zoom(by: 1.18) } label: { Image(systemName: "plus.magnifyingglass") }
                 .disabled(library.document == nil)
                 .help("放大")

@@ -159,12 +159,45 @@ final class ReaderLibrary: ObservableObject {
 
     func zoom(by factor: CGFloat) {
         guard let pdfView else { return }
+        pdfView.autoScales = false
         pdfView.scaleFactor = min(max(pdfView.scaleFactor * factor, pdfView.minScaleFactor), pdfView.maxScaleFactor)
         zoomScale = pdfView.scaleFactor
     }
 
     func setZoom(_ scale: CGFloat) {
         guard let pdfView else { return }
+        pdfView.autoScales = false
+        pdfView.scaleFactor = min(max(scale, pdfView.minScaleFactor), pdfView.maxScaleFactor)
+        zoomScale = pdfView.scaleFactor
+    }
+
+    func fitPage() {
+        setFitScale(widthOnly: false)
+    }
+
+    func fitWidth() {
+        setFitScale(widthOnly: true)
+    }
+
+    private func setFitScale(widthOnly: Bool) {
+        guard let pdfView, let page = pdfView.currentPage else { return }
+        let pageBounds = page.bounds(for: pdfView.displayBox)
+        guard pageBounds.width > 0, pageBounds.height > 0 else { return }
+
+        let pageCountInSpread: CGFloat = layoutMode == .twoPage ? 2 : 1
+        let spreadSpacing: CGFloat = layoutMode == .twoPage ? 10 : 0
+        let availableWidth = pdfView.bounds.width
+            - pdfView.pageBreakMargins.left
+            - pdfView.pageBreakMargins.right
+        let availableHeight = pdfView.bounds.height
+            - pdfView.pageBreakMargins.top
+            - pdfView.pageBreakMargins.bottom
+        let widthScale = (availableWidth - spreadSpacing) / (pageBounds.width * pageCountInSpread)
+        let heightScale = availableHeight / pageBounds.height
+        let scale = widthOnly ? widthScale : min(widthScale, heightScale)
+        guard scale.isFinite, scale > 0 else { return }
+
+        pdfView.autoScales = false
         pdfView.scaleFactor = min(max(scale, pdfView.minScaleFactor), pdfView.maxScaleFactor)
         zoomScale = pdfView.scaleFactor
     }
