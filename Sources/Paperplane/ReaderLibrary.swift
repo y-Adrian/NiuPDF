@@ -342,6 +342,7 @@ final class ReaderLibrary: ObservableObject {
 
     func applyHighlight(color: MarkupColor) {
         guard let selection = selectedText else { return }
+        selectedMarkupColor = color
         removeAnnotations(ofType: .highlight, in: selection)
         addTextMarkup(type: .highlight, color: color.nsColor.withAlphaComponent(0.42), selection: selection)
     }

@@ -121,46 +121,6 @@ struct ReaderWindow: View {
                 .disabled(library.document == nil)
                 .help("放大")
 
-            Menu {
-                ForEach(MarkupColor.allCases) { color in
-                    Button {
-                        library.selectedMarkupColor = color
-                    } label: {
-                        HStack {
-                            Circle().fill(Color(nsColor: color.nsColor)).frame(width: 10, height: 10)
-                            Text(color.title)
-                            if library.selectedMarkupColor == color {
-                                Image(systemName: "checkmark")
-                            }
-                        }
-                    }
-                }
-            } label: {
-                Image(systemName: "circle.fill")
-                    .foregroundStyle(Color(nsColor: library.selectedMarkupColor.nsColor))
-            }
-            .menuStyle(.borderlessButton)
-            .disabled(library.document == nil)
-            .help("选择标注颜色")
-
-            Button { library.highlightSelection() } label: {
-                Image(systemName: "highlighter")
-            }
-            .disabled(library.document == nil)
-            .help("高亮选中的文字")
-
-            Button { library.underlineSelection() } label: {
-                Image(systemName: "underline")
-            }
-            .disabled(library.document == nil)
-            .help("为选中文字添加下划线")
-
-            Button { library.strikeOutSelection() } label: {
-                Image(systemName: "strikethrough")
-            }
-            .disabled(library.document == nil)
-            .help("为选中文字添加删除线")
-
             Picker("页面布局", selection: $library.layoutMode) {
                 ForEach(ReaderLayout.allCases) { layout in
                     Text(layout.title).tag(layout)
