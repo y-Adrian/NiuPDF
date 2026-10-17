@@ -87,18 +87,25 @@ private final class MarkupToolIconButton: NSButton {
     init(style: Style, target: AnyObject, action: Selector) {
         self.style = style
         super.init(frame: .zero)
+        title = ""
         self.target = target
         self.action = action
         isBordered = false
         setAccessibilityElement(true)
+        setContentHuggingPriority(.required, for: .horizontal)
+        setContentHuggingPriority(.required, for: .vertical)
+        setContentCompressionResistancePriority(.required, for: .horizontal)
+        setContentCompressionResistancePriority(.required, for: .vertical)
     }
 
     required init?(coder: NSCoder) { nil }
 
+    override var intrinsicContentSize: NSSize { NSSize(width: 24, height: 24) }
+
     override func draw(_ dirtyRect: NSRect) {
         super.draw(dirtyRect)
 
-        let box = bounds.insetBy(dx: 2.5, dy: 2.5)
+        let box = CGRect(x: bounds.midX - 9, y: bounds.midY - 9, width: 18, height: 18)
         if style == .highlight {
             NSColor.systemYellow.setFill()
             NSBezierPath(rect: box).fill()
