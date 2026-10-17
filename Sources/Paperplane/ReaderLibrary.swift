@@ -374,6 +374,10 @@ final class ReaderLibrary: ObservableObject {
         selectedHighlightColor = color
         removeAnnotations(ofType: .highlight, in: selection)
         addTextMarkup(type: .highlight, color: color.nsColor.withAlphaComponent(0.42), selection: selection)
+        // PDFView draws the active text selection over page annotations. Clear it so
+        // the newly applied color is visible immediately instead of remaining blue.
+        pdfView?.clearSelection()
+        refreshPDFView()
     }
 
     func applyUnderline(color: MarkupColor) {
@@ -434,11 +438,13 @@ final class ReaderLibrary: ObservableObject {
         if !existing.isEmpty {
             removeAnnotations(ofType: type, in: selection)
             if existing.allSatisfy({ colorsMatch($0.color, color) }) {
+                pdfView?.clearSelection()
                 refreshPDFView()
                 return
             }
         }
         addTextMarkup(type: type, color: color, selection: selection)
+        pdfView?.clearSelection()
         refreshPDFView()
     }
 
