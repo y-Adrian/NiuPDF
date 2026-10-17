@@ -169,7 +169,7 @@ private final class MarkupColorSwatchButton: NSButton {
         if isSelectedColor {
             let shadow = NSShadow()
             shadow.shadowColor = NSColor.black.withAlphaComponent(0.55)
-            shadow.shadowBlurRadius = 3
+            shadow.shadowBlurRadius = 1
             shadow.shadowOffset = NSSize(width: 0, height: -1)
             NSGraphicsContext.saveGraphicsState()
             shadow.set()
