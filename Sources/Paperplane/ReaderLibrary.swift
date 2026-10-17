@@ -396,13 +396,38 @@ final class ReaderLibrary: ObservableObject {
             for page in selection.pages {
                 let selectionBounds = selection.bounds(for: page)
                 guard !selectionBounds.isNull, !selectionBounds.isEmpty else { continue }
-                let noteBounds = CGRect(x: selectionBounds.minX, y: selectionBounds.maxY - 18, width: 18, height: 18)
+                let noteBounds = commentIconBounds(for: selectionBounds, on: page)
                 let note = PDFAnnotation(bounds: noteBounds, forType: .text, withProperties: nil)
+                note.iconType = .comment
+                note.color = NSColor(calibratedRed: 0.96, green: 0.78, blue: 0.35, alpha: 1)
                 note.contents = ""
                 page.addAnnotation(note)
             }
         }
         refreshPDFView()
+    }
+
+    private func commentIconBounds(for selectionBounds: CGRect, on page: PDFPage) -> CGRect {
+        let pageBounds = page.bounds(for: .mediaBox)
+        let size: CGFloat = 14
+        let inset: CGFloat = 3
+        let gap: CGFloat = 3
+        let left = selectionBounds.minX - size - gap
+        let right = selectionBounds.maxX + gap
+        let minX = pageBounds.minX + inset
+        let maxX = pageBounds.maxX - size - inset
+        let x: CGFloat
+        if left >= minX {
+            x = left
+        } else if right <= maxX {
+            x = right
+        } else {
+            x = min(max(selectionBounds.minX, minX), maxX)
+        }
+        let minY = pageBounds.minY + inset
+        let maxY = pageBounds.maxY - size - inset
+        let y = min(max(selectionBounds.maxY - size, minY), maxY)
+        return CGRect(x: x, y: y, width: size, height: size)
     }
 
     func hasNoteAnnotationForSelection() -> Bool {
