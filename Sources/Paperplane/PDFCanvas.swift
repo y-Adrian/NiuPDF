@@ -189,83 +189,12 @@ private final class MarkupColorSwatchButton: NSButton {
 }
 
 /// Adds native PDF text markup actions to the selected text's contextual menu.
-private final class MarkupPDFView: PDFView, NSPopoverDelegate {
+private final class MarkupPDFView: PDFView {
     weak var readerLibrary: ReaderLibrary?
     private var contextMenuSelection: PDFSelection?
-    private var notePopover: NSPopover?
-    private weak var expandedNote: CommentBubblePDFAnnotation?
-    private var noteIconAnimationTimer: Timer?
-
-    override func mouseDown(with event: NSEvent) {
-        let viewPoint = convert(event.locationInWindow, from: nil)
-        if let page = page(for: viewPoint, nearest: false) {
-            let pagePoint = convert(viewPoint, to: page)
-            if let note = page.annotation(at: pagePoint) as? CommentBubblePDFAnnotation {
-                toggleNotePopover(note, on: page)
-                return
-            }
-        }
-        super.mouseDown(with: event)
-    }
-
-    private func toggleNotePopover(_ note: CommentBubblePDFAnnotation, on page: PDFPage) {
-        if expandedNote === note, notePopover?.isShown == true {
-            notePopover?.performClose(nil)
-            return
-        }
-        closeNotePopover()
-
-        let popover = NSPopover()
-        popover.behavior = .semitransient
-        popover.appearance = NSAppearance(named: .aqua)
-        popover.delegate = self
-        popover.contentViewController = CommentNotePopoverViewController(note: note) { [weak self, weak note] contents in
-            note?.contents = contents
-            self?.needsDisplay = true
-        }
-        expandedNote = note
-        notePopover = popover
-        animateNoteIcon(note, to: 1)
-        popover.show(relativeTo: convert(note.bounds, from: page), of: self, preferredEdge: .maxY)
-    }
-
-    private func closeNotePopover() {
-        notePopover?.delegate = nil
-        if notePopover?.isShown == true { notePopover?.performClose(nil) }
-        if let expandedNote { animateNoteIcon(expandedNote, to: 0) }
-        expandedNote = nil
-        notePopover = nil
-    }
-
-    func popoverDidClose(_ notification: Notification) {
-        if let expandedNote { animateNoteIcon(expandedNote, to: 0) }
-        expandedNote = nil
-        notePopover = nil
-    }
-
-    private func animateNoteIcon(_ note: CommentBubblePDFAnnotation, to target: CGFloat) {
-        noteIconAnimationTimer?.invalidate()
-        let start = note.expansionProgress
-        let startTime = ProcessInfo.processInfo.systemUptime
-        let duration: TimeInterval = 0.18
-        noteIconAnimationTimer = Timer.scheduledTimer(withTimeInterval: 1 / 60, repeats: true) { [weak self, weak note] timer in
-            guard let self, let note else {
-                timer.invalidate()
-                return
-            }
-            let elapsed = ProcessInfo.processInfo.systemUptime - startTime
-            let linearProgress = min(1, elapsed / duration)
-            let easedProgress = linearProgress * linearProgress * (3 - 2 * linearProgress)
-            note.expansionProgress = start + (target - start) * easedProgress
-            self.needsDisplay = true
-            if linearProgress >= 1 {
-                note.expansionProgress = target
-                timer.invalidate()
-                self.noteIconAnimationTimer = nil
-                self.needsDisplay = true
-            }
-        }
-    }
+    private var nativeAddNoteAction: Selector?
+    private var nativeAddNoteTarget: AnyObject?
+    private var nativeAddNoteTargetIsSelf = false
 
     override func menu(for event: NSEvent) -> NSMenu? {
         guard let selection = selectionForContextMenu(at: event),
@@ -279,14 +208,32 @@ private final class MarkupPDFView: PDFView, NSPopoverDelegate {
         setCurrentSelection(selection, animate: false)
         let menu = super.menu(for: event) ?? NSMenu()
         removeLegacyMarkupItems(from: menu)
-        _ = takeNativeNoteItem(from: menu)
+        let nativeNoteItem = takeNativeNoteItem(from: menu)
+        if nativeNoteItem?.title.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() == "add note",
+           let action = nativeNoteItem?.action {
+            nativeAddNoteAction = action
+            nativeAddNoteTargetIsSelf = nativeNoteItem?.target === self
+            nativeAddNoteTarget = nativeAddNoteTargetIsSelf ? nil : nativeNoteItem?.target
+        }
         var editingItems: [NSMenuItem] = []
 
         editingItems.append(colorRow(iconStyle: .highlight, accessibilityPrefix: "高亮", iconAction: #selector(highlightFromIcon), colorAction: #selector(applyHighlightFromRow(_:)), selectedColor: readerLibrary?.selectedHighlightColor ?? .yellow))
         editingItems.append(colorRow(iconStyle: .underline, accessibilityPrefix: "下划线", iconAction: #selector(toggleUnderlineFromIcon), colorAction: #selector(applyUnderlineFromRow(_:)), selectedColor: readerLibrary?.selectedUnderlineColor ?? .yellow))
         editingItems.append(colorRow(iconStyle: .strikethrough, accessibilityPrefix: "删除线", iconAction: #selector(toggleStrikeOutFromIcon), colorAction: #selector(applyStrikeOutFromRow(_:)), selectedColor: readerLibrary?.selectedStrikeOutColor ?? .yellow))
         let hasNote = readerLibrary?.hasNoteAnnotation(in: selection) == true
-        editingItems.append(actionItem(hasNote ? "Remove Note" : "Add Note", action: #selector(toggleNote)))
+        if hasNote {
+            if let nativeNoteItem,
+               nativeNoteItem.title.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() == "remove note" {
+                editingItems.append(nativeNoteItem)
+            } else {
+                editingItems.append(actionItem("Remove Note", action: #selector(removeSelectedNote)))
+            }
+        } else if let nativeNoteItem,
+                  nativeNoteItem.title.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() == "add note" {
+            editingItems.append(nativeNoteItem)
+        } else if let cachedItem = cachedNativeAddNoteItem() {
+            editingItems.append(cachedItem)
+        }
         editingItems.append(.separator())
 
         for item in editingItems.reversed() { menu.insertItem(item, at: 0) }
@@ -300,6 +247,13 @@ private final class MarkupPDFView: PDFView, NSPopoverDelegate {
         }) else { return nil }
         let item = menu.item(at: index)
         menu.removeItem(at: index)
+        return item
+    }
+
+    private func cachedNativeAddNoteItem() -> NSMenuItem? {
+        guard let action = nativeAddNoteAction else { return nil }
+        let item = NSMenuItem(title: "Add Note", action: action, keyEquivalent: "")
+        item.target = nativeAddNoteTargetIsSelf ? self : nativeAddNoteTarget
         return item
     }
 
@@ -392,10 +346,9 @@ private final class MarkupPDFView: PDFView, NSPopoverDelegate {
         readerLibrary?.applyHighlight(color: MarkupColor.allCases[sender.tag], to: contextMenuSelection)
         updateSelectedSwatch(in: sender)
     }
-    @objc private func toggleNote() {
-        guard let contextMenuSelection,
-              let note = readerLibrary?.toggleNoteAnnotation(in: contextMenuSelection) else { return }
-        toggleNotePopover(note.annotation, on: note.page)
+    @objc private func removeSelectedNote() {
+        guard let contextMenuSelection else { return }
+        readerLibrary?.removeNoteAnnotations(in: contextMenuSelection)
     }
     @objc private func toggleUnderlineFromIcon() {
         guard let contextMenuSelection else { return }

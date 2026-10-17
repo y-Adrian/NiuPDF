@@ -3,102 +3,6 @@ import PDFKit
 import PaperplaneCore
 import SwiftUI
 
-/// Renders a vector comment bubble while keeping a standard `/Text` annotation
-/// so other PDF readers can inspect and edit its contents.
-final class CommentBubblePDFAnnotation: PDFAnnotation {
-    var expansionProgress: CGFloat = 0
-
-    override func draw(with box: PDFDisplayBox, in context: CGContext) {
-        let rect = bounds
-        guard rect.width > 8, rect.height > 8 else { return }
-
-        context.saveGState()
-        context.setAllowsAntialiasing(true)
-        context.setShouldAntialias(true)
-        let progress = min(max(expansionProgress, 0), 1)
-        let scale = 0.98 + progress * 0.04
-        context.translateBy(x: rect.midX, y: rect.midY)
-        context.scaleBy(x: scale, y: scale)
-        context.translateBy(x: -rect.midX, y: -rect.midY)
-
-        let bubbleRect = CGRect(
-            x: rect.minX + rect.width * 0.08,
-            y: rect.minY + rect.height * 0.2,
-            width: rect.width * 0.84,
-            height: rect.height * 0.7
-        )
-        let path = CGMutablePath()
-        path.addRoundedRect(
-            in: bubbleRect,
-            cornerWidth: rect.width * 0.2,
-            cornerHeight: rect.height * 0.2
-        )
-        path.move(to: CGPoint(x: rect.minX + rect.width * 0.3, y: bubbleRect.minY + 1))
-        path.addLine(to: CGPoint(x: rect.minX + rect.width * 0.22, y: rect.minY + rect.height * 0.04))
-        path.addLine(to: CGPoint(x: rect.minX + rect.width * 0.52, y: bubbleRect.minY + 1))
-        path.closeSubpath()
-        context.addPath(path)
-        context.setFillColor(NSColor.systemRed.cgColor)
-        context.fillPath()
-
-        context.setStrokeColor(NSColor.white.cgColor)
-        context.setLineWidth(max(1, rect.width * 0.075))
-        context.setLineCap(.round)
-        context.move(to: CGPoint(x: bubbleRect.minX + bubbleRect.width * 0.24, y: bubbleRect.midY + bubbleRect.height * 0.13))
-        context.addLine(to: CGPoint(x: bubbleRect.maxX - bubbleRect.width * 0.24, y: bubbleRect.midY + bubbleRect.height * 0.13))
-        context.move(to: CGPoint(x: bubbleRect.minX + bubbleRect.width * 0.24, y: bubbleRect.midY - bubbleRect.height * 0.16))
-        context.addLine(to: CGPoint(x: bubbleRect.maxX - bubbleRect.width * 0.24, y: bubbleRect.midY - bubbleRect.height * 0.16))
-        context.strokePath()
-        context.restoreGState()
-    }
-}
-
-final class CommentNotePopoverViewController: NSViewController, NSTextViewDelegate {
-    private let note: PDFAnnotation
-    private let onChange: (String) -> Void
-    private let textView = NSTextView()
-
-    init(note: PDFAnnotation, onChange: @escaping (String) -> Void) {
-        self.note = note
-        self.onChange = onChange
-        super.init(nibName: nil, bundle: nil)
-    }
-
-    required init?(coder: NSCoder) { nil }
-
-    override func loadView() {
-        let container = NSView(frame: NSRect(x: 0, y: 0, width: 280, height: 160))
-        container.appearance = NSAppearance(named: .aqua)
-        container.wantsLayer = true
-        container.layer?.backgroundColor = NSColor.white.cgColor
-
-        let scrollView = NSScrollView(frame: NSRect(x: 8, y: 8, width: 264, height: 144))
-        scrollView.hasVerticalScroller = true
-        scrollView.borderType = .noBorder
-        scrollView.drawsBackground = false
-        textView.frame = NSRect(x: 0, y: 0, width: 264, height: 144)
-        textView.minSize = NSSize(width: 0, height: 144)
-        textView.maxSize = NSSize(width: CGFloat.greatestFiniteMagnitude, height: CGFloat.greatestFiniteMagnitude)
-        textView.isVerticallyResizable = true
-        textView.isHorizontallyResizable = false
-        textView.autoresizingMask = [.width]
-        textView.textContainer?.widthTracksTextView = true
-        textView.font = .systemFont(ofSize: 13)
-        textView.appearance = NSAppearance(named: .aqua)
-        textView.drawsBackground = false
-        textView.textColor = .black
-        textView.string = note.contents ?? ""
-        textView.delegate = self
-        scrollView.documentView = textView
-        container.addSubview(scrollView)
-        view = container
-    }
-
-    func textDidChange(_ notification: Notification) {
-        onChange(textView.string)
-    }
-}
-
 enum ReaderLayout: String, CaseIterable, Identifiable {
     case continuous
     case singlePage
@@ -492,49 +396,9 @@ final class ReaderLibrary: ObservableObject {
         replaceTextMarkup(type: .strikeOut, color: color.nsColor, selection: selection)
     }
 
-    func toggleNoteAnnotation(in selection: PDFSelection) -> (annotation: CommentBubblePDFAnnotation, page: PDFPage)? {
-        if hasAnnotation(ofType: .text, in: selection) {
-            removeAnnotations(ofType: .text, in: selection)
-            refreshPDFView()
-            return nil
-        } else {
-            var firstNote: (annotation: CommentBubblePDFAnnotation, page: PDFPage)?
-            for page in selection.pages {
-                let selectionBounds = selection.bounds(for: page)
-                guard !selectionBounds.isNull, !selectionBounds.isEmpty else { continue }
-                let noteBounds = commentIconBounds(for: selectionBounds, on: page)
-                let note = CommentBubblePDFAnnotation(bounds: noteBounds, forType: .text, withProperties: nil)
-                note.color = .systemRed
-                note.contents = ""
-                page.addAnnotation(note)
-                if firstNote == nil { firstNote = (note, page) }
-            }
-            refreshPDFView()
-            return firstNote
-        }
-    }
-
-    private func commentIconBounds(for selectionBounds: CGRect, on page: PDFPage) -> CGRect {
-        let pageBounds = page.bounds(for: .mediaBox)
-        let size: CGFloat = 18
-        let inset: CGFloat = 3
-        let gap: CGFloat = 3
-        let left = selectionBounds.minX - size - gap
-        let right = selectionBounds.maxX + gap
-        let minX = pageBounds.minX + inset
-        let maxX = pageBounds.maxX - size - inset
-        let x: CGFloat
-        if left >= minX {
-            x = left
-        } else if right <= maxX {
-            x = right
-        } else {
-            x = min(max(selectionBounds.minX, minX), maxX)
-        }
-        let minY = pageBounds.minY + inset
-        let maxY = pageBounds.maxY - size - inset
-        let y = min(max(selectionBounds.maxY - size, minY), maxY)
-        return CGRect(x: x, y: y, width: size, height: size)
+    func removeNoteAnnotations(in selection: PDFSelection) {
+        removeAnnotations(ofType: .text, in: selection)
+        refreshPDFView()
     }
 
     func hasNoteAnnotation(in selection: PDFSelection) -> Bool {
