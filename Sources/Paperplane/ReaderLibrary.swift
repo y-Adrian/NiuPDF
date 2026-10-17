@@ -454,7 +454,6 @@ final class ReaderLibrary: ObservableObject {
                 guard !selectionBounds.isNull, !selectionBounds.isEmpty else { continue }
                 let noteBounds = commentIconBounds(for: selectionBounds, on: page)
                 let note = CommentBubblePDFAnnotation(bounds: noteBounds, forType: .text, withProperties: nil)
-                note.iconType = .comment
                 note.color = NSColor(calibratedRed: 0.96, green: 0.78, blue: 0.35, alpha: 1)
                 note.contents = ""
                 page.addAnnotation(note)
