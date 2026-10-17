@@ -483,18 +483,13 @@ final class ReaderLibrary: ObservableObject {
         if hasAnnotation(ofType: .text, in: selection) {
             removeAnnotations(ofType: .text, in: selection)
         } else {
-            let lineSelections = selection.selectionsByLine()
             for page in selection.pages {
                 let selectionBounds = selection.bounds(for: page)
                 guard !selectionBounds.isNull, !selectionBounds.isEmpty else { continue }
                 let noteBounds = commentIconBounds(for: selectionBounds, on: page)
-                let note = CommentBubblePDFAnnotation(bounds: noteBounds, forType: .text, withProperties: nil)
-                let lineBounds = lineSelections.first(where: { line in
-                    line.pages.contains(where: { $0 === page })
-                })?.bounds(for: page)
-                let rowHeight = lineBounds?.height ?? selectionBounds.height
-                note.triangleHeight = max(1, rowHeight * 0.25)
-                note.color = NSColor(calibratedRed: 0.96, green: 0.78, blue: 0.35, alpha: 1)
+                let note = PDFAnnotation(bounds: noteBounds, forType: .text, withProperties: nil)
+                note.iconType = .comment
+                note.color = .systemYellow
                 note.contents = ""
                 page.addAnnotation(note)
             }
