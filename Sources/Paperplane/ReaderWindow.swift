@@ -294,21 +294,45 @@ private struct SearchField: View {
                     .buttonStyle(.plain)
                     .foregroundStyle(.tertiary)
             }
-            Menu {
-                Toggle("区分大小写", isOn: $library.isCaseSensitiveSearch)
-                Toggle("全字匹配", isOn: $library.isWholeWordSearch)
-            } label: {
-                Image(systemName: "line.3.horizontal.decrease")
-                    .foregroundStyle(.secondary)
+            searchOptionButton("Aa", label: "区分大小写", isActive: library.isCaseSensitiveSearch) {
+                library.isCaseSensitiveSearch.toggle()
+                library.find(library.searchText)
             }
-            .menuStyle(.borderlessButton)
-            .help("搜索选项")
-            .onChange(of: library.isCaseSensitiveSearch) { _ in library.find(library.searchText) }
-            .onChange(of: library.isWholeWordSearch) { _ in library.find(library.searchText) }
+            searchOptionButton("ab", label: "全词匹配", isActive: library.isWholeWordSearch, underlined: true) {
+                library.isWholeWordSearch.toggle()
+                library.find(library.searchText)
+            }
+            searchOptionButton(".*", label: "正则表达式", isActive: library.isRegularExpressionSearch) {
+                library.isRegularExpressionSearch.toggle()
+                library.find(library.searchText)
+            }
         }
         .padding(.horizontal, 9)
         .padding(.vertical, 6)
         .background(Color(nsColor: .textBackgroundColor), in: RoundedRectangle(cornerRadius: 7))
         .overlay(RoundedRectangle(cornerRadius: 7).strokeBorder(Color(nsColor: .separatorColor).opacity(0.5)))
+    }
+
+    private func searchOptionButton(
+        _ title: String,
+        label: String,
+        isActive: Bool,
+        underlined: Bool = false,
+        action: @escaping () -> Void
+    ) -> some View {
+        Button(action: action) {
+            Text(title)
+                .underline(underlined)
+                .font(.system(size: 15, weight: .medium, design: .rounded))
+                .foregroundStyle(isActive ? Color.accentColor : Color.secondary)
+                .frame(minWidth: 22, minHeight: 22)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .background(isActive ? Color.accentColor.opacity(0.12) : .clear,
+                    in: RoundedRectangle(cornerRadius: 4))
+        .accessibilityLabel(label)
+        .accessibilityValue(isActive ? "开启" : "关闭")
+        .help("\(label)：\(isActive ? "已启用" : "已关闭")")
     }
 }

@@ -50,6 +50,7 @@ final class ReaderLibrary: ObservableObject {
     @Published var searchResultIndex = 0
     @Published var isCaseSensitiveSearch = false
     @Published var isWholeWordSearch = false
+    @Published var isRegularExpressionSearch = false
     @Published var focusSearch = false
     @Published var isSidebarVisible = true
     @Published var sidebarMode: SidebarMode = .thumbnails
@@ -258,12 +259,23 @@ final class ReaderLibrary: ObservableObject {
         var options: NSString.CompareOptions = []
         if !isCaseSensitiveSearch { options.insert(.caseInsensitive) }
         let query: String
-        if isWholeWordSearch {
+        if isRegularExpressionSearch {
+            query = isWholeWordSearch
+                ? "(?<![\\p{L}\\p{N}_])(?:\(text))(?![\\p{L}\\p{N}_])"
+                : text
+            options.insert(.regularExpression)
+        } else if isWholeWordSearch {
             let escapedText = NSRegularExpression.escapedPattern(for: text)
             query = "(?<![\\p{L}\\p{N}_])\(escapedText)(?![\\p{L}\\p{N}_])"
             options.insert(.regularExpression)
         } else {
             query = text
+        }
+        if options.contains(.regularExpression), (try? NSRegularExpression(pattern: query)) == nil {
+            searchResults = []
+            searchResultIndex = 0
+            pdfView?.highlightedSelections = nil
+            return
         }
         searchResults = document.findString(query, withOptions: options)
         searchResultIndex = 0
