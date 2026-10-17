@@ -10,36 +10,44 @@ final class CommentBubblePDFAnnotation: PDFAnnotation {
         let rect = bounds.standardized
         guard rect.width > 6, rect.height > 6 else { return }
 
-        let bubble = CGRect(
-            x: rect.minX + rect.width * 0.08,
-            y: rect.minY + rect.height * 0.22,
-            width: rect.width * 0.84,
-            height: rect.height * 0.70
-        )
-        let radius = min(bubble.width, bubble.height) * 0.22
-        let tail = CGMutablePath()
-        tail.move(to: CGPoint(x: bubble.minX + bubble.width * 0.28, y: bubble.minY + 1))
-        tail.addLine(to: CGPoint(x: bubble.minX + bubble.width * 0.15, y: rect.minY + 1))
-        tail.addLine(to: CGPoint(x: bubble.minX + bubble.width * 0.48, y: bubble.minY + 1))
-        tail.closeSubpath()
-
-        let body = CGPath(roundedRect: bubble, cornerWidth: radius, cornerHeight: radius, transform: nil)
+        // Build the bubble and its tail as one path so the outline has no seam.
+        // Core Graphics keeps these as vector curves in PDF appearance streams.
+        let minX = rect.minX + rect.width * 0.06
+        let maxX = rect.maxX - rect.width * 0.06
+        let minY = rect.minY + rect.height * 0.22
+        let maxY = rect.maxY - rect.height * 0.06
+        let radius = min(rect.width, rect.height) * 0.18
+        let tailTip = CGPoint(x: rect.minX + rect.width * 0.40, y: rect.minY + rect.height * 0.04)
         let path = CGMutablePath()
-        path.addPath(body)
-        path.addPath(tail)
+        path.move(to: CGPoint(x: minX + radius, y: maxY))
+        path.addLine(to: CGPoint(x: maxX - radius, y: maxY))
+        path.addCurve(to: CGPoint(x: maxX, y: maxY - radius), control1: CGPoint(x: maxX - radius * 0.45, y: maxY), control2: CGPoint(x: maxX, y: maxY - radius * 0.45))
+        path.addLine(to: CGPoint(x: maxX, y: minY + radius))
+        path.addCurve(to: CGPoint(x: maxX - radius, y: minY), control1: CGPoint(x: maxX, y: minY + radius * 0.45), control2: CGPoint(x: maxX - radius * 0.45, y: minY))
+        path.addLine(to: CGPoint(x: rect.minX + rect.width * 0.55, y: minY))
+        path.addLine(to: tailTip)
+        path.addLine(to: CGPoint(x: rect.minX + rect.width * 0.27, y: minY))
+        path.addLine(to: CGPoint(x: minX + radius, y: minY))
+        path.addCurve(to: CGPoint(x: minX, y: minY + radius), control1: CGPoint(x: minX + radius * 0.45, y: minY), control2: CGPoint(x: minX, y: minY + radius * 0.45))
+        path.addLine(to: CGPoint(x: minX, y: maxY - radius))
+        path.addCurve(to: CGPoint(x: minX + radius, y: maxY), control1: CGPoint(x: minX, y: maxY - radius * 0.45), control2: CGPoint(x: minX + radius * 0.45, y: maxY))
+        path.closeSubpath()
 
         context.saveGState()
+        context.setAllowsAntialiasing(true)
+        context.setShouldAntialias(true)
         context.setFillColor(NSColor(calibratedRed: 1, green: 0.88, blue: 0.48, alpha: 1).cgColor)
         context.setStrokeColor(NSColor(calibratedRed: 0.56, green: 0.38, blue: 0.08, alpha: 1).cgColor)
-        context.setLineWidth(max(0.65, rect.width * 0.045))
+        context.setLineWidth(0.9)
+        context.setLineJoin(.round)
         context.addPath(path)
         context.drawPath(using: .fillStroke)
 
-        let dotRadius = max(0.55, min(rect.width, rect.height) * 0.045)
-        let centerY = bubble.midY + bubble.height * 0.02
-        for fraction in [CGFloat(0.34), 0.50, 0.66] {
+        let dotRadius: CGFloat = 0.65
+        let centerY = rect.minY + rect.height * 0.59
+        for fraction in [CGFloat(0.30), 0.50, 0.70] {
             let dot = CGRect(
-                x: bubble.minX + bubble.width * fraction - dotRadius,
+                x: rect.minX + rect.width * fraction - dotRadius,
                 y: centerY - dotRadius,
                 width: dotRadius * 2,
                 height: dotRadius * 2
@@ -457,7 +465,7 @@ final class ReaderLibrary: ObservableObject {
 
     private func commentIconBounds(for selectionBounds: CGRect, on page: PDFPage) -> CGRect {
         let pageBounds = page.bounds(for: .mediaBox)
-        let size: CGFloat = 14
+        let size: CGFloat = 18
         let inset: CGFloat = 3
         let gap: CGFloat = 3
         let left = selectionBounds.minX - size - gap
