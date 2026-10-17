@@ -208,20 +208,35 @@ private final class MarkupPDFView: PDFView {
         initialColor: MarkupColor,
         apply: @escaping (MarkupColor) -> Void
     ) {
-        let popover = NSPopover()
-        popover.behavior = .transient
-        popover.contentViewController = NSHostingController(
-            rootView: MarkupColorPickerPopover(initialColor: initialColor) { [weak self, weak popover] color in
+        let panel = NSPanel(
+            contentRect: NSRect(x: 0, y: 0, width: 300, height: 160),
+            styleMask: [.titled, .closable, .utilityWindow],
+            backing: .buffered,
+            defer: false
+        )
+        panel.title = "自定义标注颜色"
+        panel.isFloatingPanel = true
+        panel.hidesOnDeactivate = true
+        panel.contentViewController = NSHostingController(
+            rootView: MarkupColorPickerPopover(initialColor: initialColor) { [weak self, weak panel] color in
                 apply(color)
-                popover?.performClose(nil)
-                if self?.colorPickerPopover === popover { self?.colorPickerPopover = nil }
+                panel?.close()
+                if self?.colorPickerPanel === panel { self?.colorPickerPanel = nil }
             }
         )
-        colorPickerPopover = popover
-        popover.show(relativeTo: button.bounds, of: button, preferredEdge: .maxY)
+        colorPickerPanel = panel
+
+        if let window = button.window {
+            let buttonRect = window.convertToScreen(button.convert(button.bounds, to: nil))
+            panel.setFrameTopLeftPoint(NSPoint(x: buttonRect.minX, y: buttonRect.maxY + 8))
+        } else {
+            panel.center()
+        }
+        panel.makeKeyAndOrderFront(nil)
+        NSApp.activate(ignoringOtherApps: true)
     }
 
-    private var colorPickerPopover: NSPopover?
+    private var colorPickerPanel: NSPanel?
 }
 
 private struct MarkupColorPickerPopover: View {
