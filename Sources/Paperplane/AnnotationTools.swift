@@ -79,7 +79,7 @@ final class AnnotationToolHandler {
             let point = view.convert(viewPoint, to: page)
             annotation.bounds = original.offsetBy(dx: point.x - start.x, dy: point.y - start.y)
             self.drag = .move(page: page, annotation: annotation, original: original, start: start, moved: true)
-            view.needsDisplay = true
+            overlayProvider?.overlay(for: page)?.needsDisplay = true
         }
         return true
     }
@@ -180,8 +180,8 @@ final class InlineTextBoxEditor: NSObject, NSTextViewDelegate {
         textView.delegate = self
         textView.setAccessibilityLabel(L("Text Box"))
 
-        // Hide the annotation while its text is shown in the editor.
-        box.shouldDisplay = false
+        // The overlay skips the box while its text is shown in the editor.
+        library.annotationBeingTyped = box
         overlay.addSubview(textView)
         fitHeight()
         overlay.window?.makeFirstResponder(textView)
@@ -194,7 +194,7 @@ final class InlineTextBoxEditor: NSObject, NSTextViewDelegate {
         let bounds = textView.frame
         textView.delegate = nil
         textView.removeFromSuperview()
-        box.shouldDisplay = true
+        if library?.annotationBeingTyped === box { library?.annotationBeingTyped = nil }
         library?.finishTextBox(box, text: text, bounds: bounds)
         onFinish(self)
     }
@@ -222,5 +222,88 @@ final class InlineTextBoxEditor: NSObject, NSTextViewDelegate {
         let height = max(layout.usedRect(for: container).height, lineHeight) + textView.textContainerInset.height * 2 + 2
         let top = textView.frame.maxY
         textView.frame = CGRect(x: textView.frame.minX, y: top - height, width: textView.frame.width, height: height)
+    }
+}
+
+/// Draws drawings, shapes and text boxes as vectors at the current zoom, in
+/// page coordinates, so they stay sharp where PDFKit's rendering would not.
+@MainActor
+enum VectorAnnotationRenderer {
+    static func draw(_ annotation: PDFAnnotation) {
+        let lineWidth = annotation.border?.lineWidth ?? 1
+        let origin = annotation.bounds.origin
+        switch annotation.type {
+        case "Ink":
+            // Ink paths are relative to the annotation's origin.
+            let shift = AffineTransform(translationByX: origin.x, byY: origin.y)
+            annotation.color.setStroke()
+            for path in annotation.paths ?? [] {
+                guard let copy = path.copy() as? NSBezierPath else { continue }
+                copy.transform(using: shift)
+                copy.lineWidth = lineWidth
+                copy.lineCapStyle = .round
+                copy.lineJoinStyle = .round
+                copy.stroke()
+            }
+        case "Square", "Circle":
+            let rect = annotation.bounds.insetBy(dx: lineWidth / 2, dy: lineWidth / 2)
+            let path = annotation.type == "Square" ? NSBezierPath(rect: rect) : NSBezierPath(ovalIn: rect)
+            if let fill = annotation.interiorColor {
+                fill.setFill()
+                path.fill()
+            }
+            guard lineWidth > 0 else { return }
+            path.lineWidth = lineWidth
+            annotation.color.setStroke()
+            path.stroke()
+        case "Line":
+            let start = CGPoint(x: origin.x + annotation.startPoint.x, y: origin.y + annotation.startPoint.y)
+            let end = CGPoint(x: origin.x + annotation.endPoint.x, y: origin.y + annotation.endPoint.y)
+            let path = NSBezierPath()
+            path.move(to: start)
+            path.line(to: end)
+            appendArrowHead(annotation.startLineStyle, at: start, from: end, width: lineWidth, to: path)
+            appendArrowHead(annotation.endLineStyle, at: end, from: start, width: lineWidth, to: path)
+            path.lineWidth = lineWidth
+            path.lineCapStyle = .round
+            path.lineJoinStyle = .round
+            annotation.color.setStroke()
+            path.stroke()
+        case "FreeText":
+            drawText(of: annotation)
+        default:
+            break
+        }
+    }
+
+    private static func appendArrowHead(_ style: PDFLineStyle, at tip: CGPoint, from tail: CGPoint, width: CGFloat, to path: NSBezierPath) {
+        guard style == .openArrow || style == .closedArrow else { return }
+        let length = max(8, width * 4)
+        let angle = atan2(tip.y - tail.y, tip.x - tail.x)
+        let left = CGPoint(x: tip.x + length * cos(angle + .pi * 5 / 6), y: tip.y + length * sin(angle + .pi * 5 / 6))
+        let right = CGPoint(x: tip.x + length * cos(angle - .pi * 5 / 6), y: tip.y + length * sin(angle - .pi * 5 / 6))
+        path.move(to: left)
+        path.line(to: tip)
+        path.line(to: right)
+        if style == .closedArrow { path.close() }
+    }
+
+    /// Lays text out like the inline editor (default line fragment padding,
+    /// 2 pt top inset), so a box does not shift when editing ends.
+    private static func drawText(of box: PDFAnnotation) {
+        if box.color.alphaComponent > 0 {
+            box.color.setFill()
+            box.bounds.fill()
+        }
+        let paragraph = NSMutableParagraphStyle()
+        paragraph.alignment = box.alignment
+        let attributes: [NSAttributedString.Key: Any] = [
+            .font: box.font ?? .systemFont(ofSize: ReaderLibrary.textBoxFontSize),
+            .foregroundColor: box.fontColor ?? .black,
+            .paragraphStyle: paragraph
+        ]
+        let padding = NSTextContainer().lineFragmentPadding
+        let rect = CGRect(x: box.bounds.minX + padding, y: box.bounds.minY, width: box.bounds.width - padding * 2, height: box.bounds.height - 2)
+        (box.contents ?? "").draw(with: rect, options: [.usesLineFragmentOrigin], attributes: attributes)
     }
 }

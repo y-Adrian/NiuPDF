@@ -227,6 +227,9 @@ final class PageAnnotationOverlay: NSView {
     }
 
     override func draw(_ dirtyRect: NSRect) {
+        for annotation in library?.overlayDrawnAnnotations(on: page) ?? [] {
+            VectorAnnotationRenderer.draw(annotation)
+        }
         drawToolPreview()
         let markers = markers
         if let hovered, let marker = markers.first(where: { $0.annotation === hovered }) {

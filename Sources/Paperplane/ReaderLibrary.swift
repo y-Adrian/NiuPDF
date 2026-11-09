@@ -733,6 +733,7 @@ final class ReaderLibrary: ObservableObject {
         guard !colorsMatch(previous, color) else { return }
         if annotation.type == "FreeText" {
             annotation.fontColor = color
+            Self.stampTextStyle(of: annotation)
         } else {
             annotation.color = color
         }
@@ -800,8 +801,7 @@ final class ReaderLibrary: ObservableObject {
         note.contents = ""
         let edit = captureAnnotationEdit(pages: [page]) { page.addAnnotation(note) }
         // The overlay draws the icon; see `prepareNotes(on:)`.
-        note.shouldDisplay = false
-        hiddenNativeNotes[ObjectIdentifier(note)] = note
+        handOverToOverlay(note)
         pendingCreation = (note, edit)
         annotationRevision += 1
         refreshPDFView()
@@ -829,7 +829,9 @@ final class ReaderLibrary: ObservableObject {
         border.lineWidth = 0
         box.border = border
         box.contents = ""
+        Self.stampTextStyle(of: box)
         let edit = captureAnnotationEdit(pages: [page]) { page.addAnnotation(box) }
+        handOverToOverlay(box)
         pendingCreation = (box, edit)
         return box
     }
@@ -891,6 +893,7 @@ final class ReaderLibrary: ObservableObject {
         ink.add(local)
         ink.border = strokeBorder()
         ink.color = drawingColor.nsColor
+        handOverToOverlay(ink)
         recordAnnotationEdit(L("Draw"), pages: [page]) { page.addAnnotation(ink) }
     }
 
@@ -914,6 +917,7 @@ final class ReaderLibrary: ObservableObject {
         }
         shape.border = strokeBorder()
         shape.color = drawingColor.nsColor
+        handOverToOverlay(shape)
         recordAnnotationEdit(L("Add Shape"), pages: [page]) { page.addAnnotation(shape) }
     }
 
@@ -947,10 +951,12 @@ final class ReaderLibrary: ObservableObject {
 
     // MARK: - Note icons
 
-    /// Standalone `/Text` notes whose PDFKit icon is hidden on screen because the
-    /// page overlay draws a sharp one instead. They are made visible again for the
-    /// duration of every save, so other readers still show them.
-    private var hiddenNativeNotes: [ObjectIdentifier: PDFAnnotation] = [:]
+    /// Annotations whose PDFKit rendering is hidden on screen because the page
+    /// overlay draws them as vectors instead: standalone `/Text` note icons, and
+    /// drawings, shapes and text boxes, which PDFKit on macOS 27 rasterizes at a
+    /// low resolution. They are made visible again for the duration of every
+    /// save, so other readers still show them.
+    private var hiddenNativeAnnotations: [ObjectIdentifier: PDFAnnotation] = [:]
     private var preparedNotePages = Set<ObjectIdentifier>()
     private var markerCache: [ObjectIdentifier: (revision: Int, markers: [CommentMarker])] = [:]
 
@@ -972,13 +978,65 @@ final class ReaderLibrary: ObservableObject {
         }
     }
 
-    /// Hands a page's note icons over to the overlay. Idempotent per page.
+    /// PDFKit writes a text box's font and color only into its appearance
+    /// stream, which other readers show correctly, but reads the box back as
+    /// black 12 pt Helvetica. Text boxes made here also keep "size r g b a"
+    /// under this key, restored when the document opens.
+    private static let textStyleKey = PDFAnnotationKey(rawValue: "/PaperplaneTextStyle")
+
+    private static func stampTextStyle(of box: PDFAnnotation) {
+        let size = box.font?.pointSize ?? textBoxFontSize
+        let color = (box.fontColor ?? .black).usingColorSpace(.deviceRGB) ?? .black
+        let values = [size, color.redComponent, color.greenComponent, color.blueComponent, color.alphaComponent]
+        box.setValue(values.map { String(format: "%.3f", $0) }.joined(separator: " "), forAnnotationKey: textStyleKey)
+    }
+
+    /// Restores a stamped text style; false for text boxes from other apps.
+    private static func restoreTextStyle(of box: PDFAnnotation) -> Bool {
+        guard let raw = box.value(forAnnotationKey: textStyleKey) as? String else { return false }
+        let values = raw.split(separator: " ").compactMap { Double($0) }.map { CGFloat($0) }
+        guard values.count == 5 else { return false }
+        box.font = .systemFont(ofSize: values[0])
+        box.fontColor = NSColor(deviceRed: values[1], green: values[2], blue: values[3], alpha: values[4])
+        return true
+    }
+
+    /// Annotation types the overlay draws itself, besides note icons.
+    static let overlayDrawnTypes: Set<String> = ["Ink", "Square", "Circle", "Line", "FreeText"]
+
+    /// The text box being typed into; the overlay skips it while the inline
+    /// editor shows its text.
+    var annotationBeingTyped: PDFAnnotation? {
+        didSet { refreshPDFView() }
+    }
+
+    /// Hides PDFKit's rendering of an annotation the overlay draws instead.
+    private func handOverToOverlay(_ annotation: PDFAnnotation) {
+        annotation.shouldDisplay = false
+        hiddenNativeAnnotations[ObjectIdentifier(annotation)] = annotation
+    }
+
+    /// Drawings, shapes and text boxes on a page for the overlay to draw.
+    func overlayDrawnAnnotations(on page: PDFPage) -> [PDFAnnotation] {
+        prepareNotes(on: page)
+        return page.annotations.filter {
+            Self.overlayDrawnTypes.contains($0.type ?? "")
+                && hiddenNativeAnnotations[ObjectIdentifier($0)] != nil
+                && $0 !== annotationBeingTyped
+        }
+    }
+
+    /// Hands a page's note icons, drawings, shapes and text boxes over to the
+    /// overlay. Annotations their author hid stay hidden. Idempotent per page.
     func prepareNotes(on page: PDFPage) {
         guard preparedNotePages.insert(ObjectIdentifier(page)).inserted else { return }
         for annotation in page.annotations {
-            if annotation.type == "Text", annotation.shouldDisplay {
-                annotation.shouldDisplay = false
-                hiddenNativeNotes[ObjectIdentifier(annotation)] = annotation
+            let type = annotation.type ?? ""
+            // Text boxes from other apps keep PDFKit's rendering, which follows
+            // their own appearance stream more faithfully than a redraw would.
+            let drawable = type == "FreeText" ? Self.restoreTextStyle(of: annotation) : Self.overlayDrawnTypes.contains(type)
+            if (type == "Text" || drawable), annotation.shouldDisplay {
+                handOverToOverlay(annotation)
             } else if MarkupEngine.isMarkup(annotation), let text = annotation.contents, !text.isEmpty {
                 storeNote(text, for: annotation)
             }
@@ -987,10 +1045,10 @@ final class ReaderLibrary: ObservableObject {
 
     /// Restores what `prepareNotes` changed so the saved file is standard.
     private func withNativeNotesRestored<T>(_ body: () throws -> T) rethrows -> T {
-        for note in hiddenNativeNotes.values { note.shouldDisplay = true }
+        for note in hiddenNativeAnnotations.values { note.shouldDisplay = true }
         for (annotation, text) in markupNotes.values { annotation.contents = text.isEmpty ? nil : text }
         defer {
-            for note in hiddenNativeNotes.values { note.shouldDisplay = false }
+            for note in hiddenNativeAnnotations.values { note.shouldDisplay = false }
             for (annotation, _) in markupNotes.values { annotation.contents = nil }
         }
         return try body()
@@ -1003,14 +1061,15 @@ final class ReaderLibrary: ObservableObject {
         let markers = CommentMarkerLayout.markers(
             on: page,
             noteOf: { [unowned self] in note(of: $0) },
-            showsStandaloneNote: { [hiddenNativeNotes] in hiddenNativeNotes[ObjectIdentifier($0)] != nil }
+            showsStandaloneNote: { [hiddenNativeAnnotations] in hiddenNativeAnnotations[ObjectIdentifier($0)] != nil }
         )
         markerCache[key] = (annotationRevision, markers)
         return markers
     }
 
     private func resetNoteIconState() {
-        hiddenNativeNotes = [:]
+        hiddenNativeAnnotations = [:]
+        annotationBeingTyped = nil
         markupNotes = [:]
         preparedNotePages = []
         markerCache = [:]

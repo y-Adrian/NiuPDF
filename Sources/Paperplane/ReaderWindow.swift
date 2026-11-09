@@ -405,14 +405,16 @@ private struct AnnotationToolBar: View {
 
     var body: some View {
         HStack(spacing: 18) {
+            Spacer(minLength: 0)
             group([.highlight, .underline, .strikeOut])
             group([.ink, .textBox])
             HStack(spacing: 2) {
                 shapeMenu
                 toolButton(.note)
             }
+            Divider().frame(height: 20)
+            colorRow
             Spacer(minLength: 0)
-            colorMenu
         }
         .padding(.horizontal, 14)
         .padding(.vertical, 5)
@@ -457,27 +459,38 @@ private struct AnnotationToolBar: View {
         }
     }
 
-    @ViewBuilder
-    private var colorMenu: some View {
+    /// The active tool's colors, one click away beside the tools. Tools without
+    /// a color (selection, notes) show the highlight colors dimmed, so the row
+    /// keeps its place.
+    private var colorRow: some View {
         let tool = library.activeTool
-        if tool != .select && tool != .note {
-            let current = library.color(for: tool)
-            Menu {
-                ForEach(tool.colorChoices) { color in
-                    Button { library.setColor(color, for: tool) } label: {
-                        Label { Text(color.title) } icon: { Image(nsImage: swatchImage(color.nsColor)) }
-                    }
+        let hasColor = tool != .select && tool != .note
+        let palette = hasColor ? tool.colorChoices : MarkupColor.allCases
+        let current = library.color(for: hasColor ? tool : .highlight)
+        return HStack(spacing: 6) {
+            ForEach(palette) { color in
+                Button { library.setColor(color, for: tool) } label: {
+                    swatch(color, isSelected: hasColor && color == current)
                 }
-            } label: {
-                HStack(spacing: 5) {
-                    Image(nsImage: swatchImage(current.nsColor))
-                    Text(current.title)
-                }
+                .buttonStyle(.plain)
+                .help(color.title)
+                .accessibilityLabel(color.title)
+                .accessibilityValue(hasColor && color == current ? L("Selected") : "")
             }
-            .menuStyle(.borderlessButton)
-            .fixedSize()
-            .help(L("Color"))
         }
+        .disabled(!hasColor)
+        .opacity(hasColor ? 1 : 0.35)
+    }
+
+    private func swatch(_ color: MarkupColor, isSelected: Bool) -> some View {
+        Circle()
+            .fill(Color(nsColor: color.nsColor))
+            // An outline in the label color keeps black visible on a dark bar.
+            .overlay(Circle().strokeBorder(Color.primary.opacity(0.3), lineWidth: 0.75))
+            .frame(width: 16, height: 16)
+            .padding(3)
+            .overlay(Circle().strokeBorder(isSelected ? Color.accentColor : .clear, lineWidth: 2))
+            .contentShape(Circle())
     }
 
     private func toolLabel(symbol: String, isActive: Bool) -> some View {
@@ -496,18 +509,5 @@ private struct AnnotationToolBar: View {
     private func pick(_ shape: AnnotationTool) {
         lastShape = shape
         library.activeTool = shape
-    }
-
-    /// A filled circle that menus show in color rather than as a template.
-    private func swatchImage(_ color: NSColor) -> NSImage {
-        let image = NSImage(size: NSSize(width: 12, height: 12), flipped: false) { rect in
-            color.setFill()
-            NSBezierPath(ovalIn: rect.insetBy(dx: 0.5, dy: 0.5)).fill()
-            NSColor.black.withAlphaComponent(0.2).setStroke()
-            NSBezierPath(ovalIn: rect.insetBy(dx: 0.5, dy: 0.5)).stroke()
-            return true
-        }
-        image.isTemplate = false
-        return image
     }
 }
