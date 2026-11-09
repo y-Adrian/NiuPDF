@@ -62,6 +62,8 @@ private struct GeneralSettings: View {
             }
             .onChange(of: language) { $0.save() }
 
+            AutosaveSetting()
+
             if language != launchLanguage {
                 HStack {
                     Text(L("Takes effect after Paperplane restarts."))
@@ -75,6 +77,21 @@ private struct GeneralSettings: View {
             }
         }
         .padding(20)
+    }
+}
+
+private struct AutosaveSetting: View {
+    @EnvironmentObject private var library: ReaderLibrary
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Toggle(L("Save annotations automatically"), isOn: $library.isAutosaveEnabled)
+            Text(L("Changes are written to the PDF a moment after each edit, and when you switch apps or quit."))
+                .font(.callout)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .padding(.top, 8)
     }
 }
 

@@ -18,7 +18,7 @@ A small native macOS PDF reader built with SwiftUI and PDFKit. It takes inspirat
 - Browse, jump to and delete annotations from the annotation list sidebar
 - Undo and redo annotation edits with `⌘Z` / `⇧⌘Z`
 - Open password-protected PDFs
-- Save PDF annotations with `⌘S`; unsaved changes are confirmed before opening another file or quitting
+- Annotations are saved automatically a moment after each change, and when switching apps, opening another file or quitting; `⌘S` saves at once, and autosave can be turned off in Settings
 
 ## Languages
 

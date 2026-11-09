@@ -196,8 +196,14 @@ struct ReaderWindow: View {
             Image(systemName: "doc.text")
             Text(library.displayName)
                 .lineLimit(1)
-            if library.hasUnsavedChanges {
+            if case let .paused(reason) = library.autosaveState {
+                Text(L("· Autosave Paused"))
+                    .foregroundStyle(.orange)
+                    .help(reason)
+            } else if library.hasUnsavedChanges {
                 Text(L("· Edited"))
+            } else if library.autosaveState == .saved {
+                Text(L("· Saved Automatically"))
             }
             Spacer()
             Text("\(Int(library.zoomScale * 100))%")

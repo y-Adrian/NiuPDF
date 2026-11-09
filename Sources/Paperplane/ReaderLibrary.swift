@@ -217,6 +217,28 @@ final class ReaderLibrary: ObservableObject {
     /// longer be reached because a new edit replaced the steps that led to it.
     private var changeCount = 0
     private var savedChangeCount = 0
+
+    /// Writes annotation changes to the file a moment after each edit, as the
+    /// requirements ask ("annotations land on disk in real time").
+    @Published var isAutosaveEnabled = UserDefaults.standard.object(forKey: "autosaveEnabled") as? Bool ?? true {
+        didSet {
+            UserDefaults.standard.set(isAutosaveEnabled, forKey: "autosaveEnabled")
+            if isAutosaveEnabled { scheduleAutosave() } else { autosaveTask?.cancel() }
+        }
+    }
+    enum AutosaveState: Equatable {
+        case saved
+        /// Writing failed (for example the file changed elsewhere); autosave
+        /// stops for this document until a manual save succeeds.
+        case paused(String)
+    }
+    @Published private(set) var autosaveState: AutosaveState?
+    private var autosaveTask: Task<Void, Never>?
+    private static let autosaveDelay: UInt64 = 1_500_000_000
+    private var isAutosavePaused: Bool {
+        if case .paused = autosaveState { return true }
+        return false
+    }
     @Published var layoutMode: ReaderLayout = ReaderLayout(
         rawValue: UserDefaults.standard.string(forKey: "readerLayoutMode") ?? ""
     ) ?? .continuous {
@@ -234,6 +256,13 @@ final class ReaderLibrary: ObservableObject {
         static let bookmark = "lastOpenedPDFBookmark"
         static let pageIndex = "lastOpenedPDFPageIndex"
         static let zoomScale = "lastOpenedPDFZoomScale"
+    }
+
+    init() {
+        // Switching to another app is a natural moment to have everything on disk.
+        NotificationCenter.default.addObserver(forName: NSApplication.willResignActiveNotification, object: nil, queue: .main) { [weak self] _ in
+            MainActor.assumeIsolated { self?.autosaveNow() }
+        }
     }
 
     var displayName: String { fileURL?.deletingPathExtension().lastPathComponent ?? L("No Document") }
@@ -314,6 +343,8 @@ final class ReaderLibrary: ObservableObject {
         changeCount = 0
         savedChangeCount = 0
         hasUnsavedChanges = false
+        autosaveTask?.cancel()
+        autosaveState = nil
         annotationRevision += 1
         // PDFKit builds its own note badges when it first lays out a page, before
         // any overlay exists, so hand every page's notes over before display.
@@ -370,6 +401,7 @@ final class ReaderLibrary: ObservableObject {
     func confirmDiscardingUnsavedChanges() -> Bool {
         commitPendingEdits?()
         guard hasUnsavedChanges, document != nil else { return true }
+        if isAutosaveEnabled, !isAutosavePaused, (try? writeDocument()) != nil { return true }
         let alert = NSAlert()
         alert.messageText = L("Do you want to save the changes made to “%@”?", displayName)
         alert.informativeText = L("Your annotation changes will be lost if you don’t save them.")
@@ -1325,6 +1357,37 @@ final class ReaderLibrary: ObservableObject {
         hasUnsavedChanges = changeCount != savedChangeCount
         annotationRevision += 1
         refreshPDFView()
+        scheduleAutosave()
+    }
+
+    // MARK: - Autosave
+
+    private func scheduleAutosave() {
+        autosaveTask?.cancel()
+        guard isAutosaveEnabled, !isAutosavePaused, hasUnsavedChanges else { return }
+        autosaveTask = Task { @MainActor [weak self] in
+            try? await Task.sleep(nanoseconds: Self.autosaveDelay)
+            guard !Task.isCancelled else { return }
+            self?.autosaveNow()
+        }
+    }
+
+    /// Saves now if autosave applies. A text box being typed or a note still
+    /// waiting for its text is not interrupted; the save waits for it.
+    func autosaveNow() {
+        guard isAutosaveEnabled, !isAutosavePaused, hasUnsavedChanges, document != nil else { return }
+        if annotationBeingTyped != nil || pendingCreation != nil {
+            scheduleAutosave()
+            return
+        }
+        do {
+            try writeDocument()
+            autosaveState = .saved
+        } catch {
+            // Say it once; repeating the alert on every edit would be worse.
+            autosaveState = .paused(error.localizedDescription)
+            errorMessage = L("Autosave paused: %@ Save with ⌘S once the problem is resolved.", error.localizedDescription)
+        }
     }
 
     private func refreshPDFView() {
@@ -1576,18 +1639,25 @@ final class ReaderLibrary: ObservableObject {
     @discardableResult
     func save() -> Bool {
         commitPendingEdits?()
-        guard let document, let fileURL, let fileRevision else { return false }
         do {
-            self.fileRevision = try withNativeNotesRestored {
-                try SafePDFFileStore.save(document, to: fileURL, expectedRevision: fileRevision)
-            }
-            savedChangeCount = changeCount
-            hasUnsavedChanges = false
+            try writeDocument()
+            // A manual save that succeeds resumes autosave.
+            autosaveState = isAutosaveEnabled ? .saved : nil
             return true
         } catch {
             errorMessage = error.localizedDescription
             return false
         }
+    }
+
+    private func writeDocument() throws {
+        guard let document, let fileURL, let fileRevision else { throw SafePDFFileStoreError.unreadablePDF }
+        autosaveTask?.cancel()
+        self.fileRevision = try withNativeNotesRestored {
+            try SafePDFFileStore.save(document, to: fileURL, expectedRevision: fileRevision)
+        }
+        savedChangeCount = changeCount
+        hasUnsavedChanges = false
     }
 }
 

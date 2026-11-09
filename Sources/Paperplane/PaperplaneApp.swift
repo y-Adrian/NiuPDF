@@ -62,6 +62,7 @@ struct PaperplaneApp: App {
         // Adds "Settings…" with ⌘, to the app menu.
         Settings {
             SettingsView()
+                .environmentObject(library)
         }
     }
 }
