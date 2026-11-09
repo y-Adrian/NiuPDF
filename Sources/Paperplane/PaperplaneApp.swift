@@ -117,6 +117,13 @@ struct ReaderCommands: Commands {
                 .keyboardShortcut("p", modifiers: .command)
                 .disabled(knownEmpty)
         }
+        CommandGroup(after: .pasteboard) {
+            Button(L("Duplicate")) { documentLibrary?.duplicateSelectedAnnotations() }
+                .keyboardShortcut("d", modifiers: .command)
+                .disabled(focusedLibrary.map { !$0.hasCopyableSelection } ?? false)
+            Button(L("Delete Selected Annotations")) { documentLibrary?.deleteSelectedAnnotations() }
+                .disabled(focusedLibrary.map { $0.selectedAnnotations.isEmpty } ?? false)
+        }
         CommandGroup(after: .textEditing) {
             Button(L("Find…")) { documentLibrary?.focusSearch.toggle() }
                 .keyboardShortcut("f", modifiers: .command)

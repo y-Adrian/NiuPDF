@@ -263,12 +263,74 @@ private final class MarkupPDFView: PDFView, AnnotationOverlayHost {
     }
 
     /// Esc leaves the active tool for plain selection.
+    /// Esc leaves the active tool, then clears the annotation selection.
+    /// With annotations selected, Delete removes them and the arrow keys
+    /// nudge them by 1 pt (10 pt with Shift).
     override func keyDown(with event: NSEvent) {
-        if event.keyCode == 53, let readerLibrary, readerLibrary.activeTool != .select {
-            readerLibrary.activeTool = .select
-            return
+        guard let readerLibrary else { return super.keyDown(with: event) }
+        if event.keyCode == 53 {
+            if readerLibrary.activeTool != .select {
+                readerLibrary.activeTool = .select
+                return
+            }
+            if !readerLibrary.selectedAnnotations.isEmpty {
+                readerLibrary.clearAnnotationSelection()
+                return
+            }
+        }
+        if !readerLibrary.selectedAnnotations.isEmpty {
+            let step: CGFloat = event.modifierFlags.contains(.shift) ? 10 : 1
+            switch event.keyCode {
+            case 51, 117:   // Delete, Forward Delete
+                readerLibrary.deleteSelectedAnnotations()
+                return
+            case 123: readerLibrary.nudgeSelection(dx: -step, dy: 0); return
+            case 124: readerLibrary.nudgeSelection(dx: step, dy: 0); return
+            case 125: readerLibrary.nudgeSelection(dx: 0, dy: -step); return
+            case 126: readerLibrary.nudgeSelection(dx: 0, dy: step); return
+            default: break
+            }
         }
         super.keyDown(with: event)
+    }
+
+    // Edit menu: with annotations selected, Copy, Cut and Paste act on them;
+    // otherwise Copy copies selected text as before.
+    override func copy(_ sender: Any?) {
+        if readerLibrary?.copySelectedAnnotations() == true { return }
+        super.copy(sender)
+    }
+
+    @objc func cut(_ sender: Any?) {
+        readerLibrary?.cutSelectedAnnotations()
+    }
+
+    @objc func paste(_ sender: Any?) {
+        readerLibrary?.pasteAnnotations()
+    }
+
+    /// PDFView validates its menu items (Copy only with selected text) but does
+    /// not declare it publicly, so its implementation is called directly for
+    /// everything this view does not decide itself.
+    @objc func validateMenuItem(_ menuItem: NSMenuItem) -> Bool {
+        switch menuItem.action {
+        case #selector(copy(_:)):
+            return readerLibrary?.hasCopyableSelection == true || pdfViewValidates(menuItem)
+        case #selector(cut(_:)):
+            return readerLibrary?.hasCopyableSelection == true
+        case #selector(paste(_:)):
+            return readerLibrary?.canPasteAnnotations == true
+        default:
+            return pdfViewValidates(menuItem)
+        }
+    }
+
+    private func pdfViewValidates(_ menuItem: NSMenuItem) -> Bool {
+        let selector = #selector(NSMenuItemValidation.validateMenuItem(_:))
+        guard PDFView.instancesRespond(to: selector),
+              let implementation = class_getMethodImplementation(PDFView.self, selector) else { return true }
+        typealias Validate = @convention(c) (AnyObject, Selector, NSMenuItem) -> Bool
+        return unsafeBitCast(implementation, to: Validate.self)(self, selector, menuItem)
     }
 
     private func resolveClick() {
@@ -286,6 +348,7 @@ private final class MarkupPDFView: PDFView, AnnotationOverlayHost {
         guard let annotation = pendingMarkupClick else { return }
         pendingMarkupClick = nil
         guard (currentSelection?.string ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
+        readerLibrary?.select(annotation, extending: NSEvent.modifierFlags.contains(.shift))
         editAnnotation(annotation)
     }
 
@@ -748,10 +811,11 @@ struct SearchResultsSidebar: View {
     }
 }
 
+/// All annotations in page order. Click reveals and selects one; ⌘- or
+/// ⇧-click selects several, which Delete or the context menu removes together.
 struct AnnotationListSidebar: View {
+    @EnvironmentObject private var library: ReaderLibrary
     let items: [AnnotationListItem]
-    let onSelect: (AnnotationListItem) -> Void
-    let onDelete: (AnnotationListItem) -> Void
 
     var body: some View {
         Group {
@@ -773,11 +837,13 @@ struct AnnotationListSidebar: View {
                 ScrollView {
                     LazyVStack(alignment: .leading, spacing: 6) {
                         ForEach(items) { item in
-                            Button { onSelect(item) } label: { row(for: item) }
-                                .buttonStyle(.plain)
-                                .contextMenu {
-                                    Button(L("Delete Annotation"), role: .destructive) { onDelete(item) }
-                                }
+                            Button { choose(item) } label: {
+                                row(for: item)
+                                    .background(library.isSelected(item.annotation) ? Color.accentColor.opacity(0.14) : .clear,
+                                                in: RoundedRectangle(cornerRadius: 6))
+                            }
+                            .buttonStyle(.plain)
+                            .contextMenu { menu(for: item) }
                         }
                     }
                     .padding(8)
@@ -786,6 +852,22 @@ struct AnnotationListSidebar: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(Color(nsColor: .controlBackgroundColor))
+    }
+
+    private func choose(_ item: AnnotationListItem) {
+        let flags = NSEvent.modifierFlags
+        library.select(item.annotation, extending: flags.contains(.command) || flags.contains(.shift))
+        library.reveal(item.annotation)
+    }
+
+    @ViewBuilder
+    private func menu(for item: AnnotationListItem) -> some View {
+        let count = library.selectedAnnotations.count
+        if library.isSelected(item.annotation), count > 1 {
+            Button(L("Delete %ld Annotations", count), role: .destructive) { library.deleteSelectedAnnotations() }
+        } else {
+            Button(L("Delete Annotation"), role: .destructive) { library.deleteAnnotation(item.annotation) }
+        }
     }
 
     private func row(for item: AnnotationListItem) -> some View {

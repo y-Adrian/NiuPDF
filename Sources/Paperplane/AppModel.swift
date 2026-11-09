@@ -1,4 +1,5 @@
 import AppKit
+import PDFKit
 import SwiftUI
 
 /// A file in the "recent" list. The bookmark keeps sandbox access to the file
@@ -55,6 +56,11 @@ final class AppModel: ObservableObject {
     static let shared = AppModel()
 
     @Published private(set) var recentDocuments: [RecentDocument] = []
+    /// Annotations copied with ⌘C or ⌘X, with the page each came from, shared
+    /// by every window so they can be pasted into another page or document.
+    var annotationClipboard: [(annotation: PDFAnnotation, sourcePage: PDFPage?)] = []
+    /// Grows with each paste onto the source page, so copies do not stack.
+    var pasteOffset: CGFloat = 0
     private let libraries = NSHashTable<ReaderLibrary>.weakObjects()
     /// Opens a new reader window; set by the first window from SwiftUI's environment.
     var openWindowAction: (() -> Void)?

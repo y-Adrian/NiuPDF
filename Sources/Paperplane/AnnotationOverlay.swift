@@ -230,6 +230,7 @@ final class PageAnnotationOverlay: NSView {
         for annotation in library?.overlayDrawnAnnotations(on: page) ?? [] {
             VectorAnnotationRenderer.draw(annotation)
         }
+        drawSelection()
         drawToolPreview()
         let markers = markers
         if let hovered, let marker = markers.first(where: { $0.annotation === hovered }) {
@@ -245,6 +246,43 @@ final class PageAnnotationOverlay: NSView {
                 hasText: hasText,
                 opacity: marker.annotation === hovered ? 1 : CommentIcon.restingOpacity
             )
+        }
+    }
+
+    /// A dashed frame around each selected annotation on this page, with
+    /// handles on drawings, shapes and text boxes (end points on arrows).
+    private func drawSelection() {
+        guard let library else { return }
+        let selected = library.selectedAnnotations.filter { $0.page === page }
+        guard !selected.isEmpty else { return }
+        let scale = max(pdfView?.scaleFactor ?? 1, 0.05)
+        let handleSide = AnnotationToolHandler.handleSize / scale
+        let accent = NSColor.controlAccentColor
+        for annotation in selected {
+            if annotation.type != "Line" {
+                let frame: CGRect
+                if MarkupEngine.isMarkup(annotation) {
+                    let lines = MarkupEngine.lineRects(of: annotation)
+                    frame = lines.dropFirst().reduce(lines.first ?? annotation.bounds) { $0.union($1) }
+                } else {
+                    frame = annotation.bounds
+                }
+                let outline = NSBezierPath(rect: frame.insetBy(dx: -2 / scale, dy: -2 / scale))
+                outline.lineWidth = 1 / scale
+                outline.setLineDash([4 / scale, 3 / scale], count: 2, phase: 0)
+                accent.setStroke()
+                outline.stroke()
+            }
+            guard ReaderLibrary.isResizable(annotation) else { continue }
+            for (_, center) in ReaderLibrary.handles(for: annotation) {
+                let rect = CGRect(x: center.x - handleSide / 2, y: center.y - handleSide / 2, width: handleSide, height: handleSide)
+                let handle = annotation.type == "Line" ? NSBezierPath(ovalIn: rect) : NSBezierPath(rect: rect)
+                NSColor.white.setFill()
+                handle.fill()
+                handle.lineWidth = 1.2 / scale
+                accent.setStroke()
+                handle.stroke()
+            }
         }
     }
 
@@ -291,6 +329,7 @@ final class PageAnnotationOverlay: NSView {
     override func mouseDown(with event: NSEvent) {
         guard let marker = marker(at: convert(event.locationInWindow, from: nil)) else { return }
         setHovered(nil)
+        library?.select(marker.annotation, extending: event.modifierFlags.contains(.shift))
         (pdfView as? AnnotationOverlayHost)?.editAnnotation(marker.annotation)
     }
 

@@ -21,8 +21,14 @@ final class AnnotationToolHandler {
     private enum Drag {
         case ink(page: PDFPage, points: [CGPoint])
         case shape(page: PDFPage, tool: AnnotationTool, start: CGPoint, end: CGPoint)
-        case move(page: PDFPage, annotation: PDFAnnotation, original: CGRect, start: CGPoint, moved: Bool)
+        /// Drags the selected drawings, shapes and text boxes together. A click
+        /// without a drag on one that was already selected opens its popover.
+        case move(page: PDFPage, clicked: PDFAnnotation, annotations: [PDFAnnotation], originals: [AnnotationGeometry], start: CGPoint, moved: Bool, wasSelected: Bool)
+        case resize(page: PDFPage, annotation: PDFAnnotation, handle: ResizeHandle, original: AnnotationGeometry, moved: Bool)
     }
+
+    /// Handle hit radius and drawn size, in screen points.
+    static let handleSize: CGFloat = 8
 
     init(view: PDFView, library: ReaderLibrary?, overlayProvider: AnnotationOverlayProvider) {
         self.view = view
@@ -39,8 +45,23 @@ final class AnnotationToolHandler {
                 beginEditing(box, on: page)
                 return true
             }
-            guard let movable = annotation(at: point, on: page, where: ReaderLibrary.isMovable) else { return false }
-            drag = .move(page: page, annotation: movable, original: movable.bounds, start: point, moved: false)
+            if let (annotation, handle) = handle(at: point, on: page) {
+                drag = .resize(page: page, annotation: annotation, handle: handle, original: AnnotationGeometry(annotation), moved: false)
+                return true
+            }
+            guard let movable = annotation(at: point, on: page, where: ReaderLibrary.isMovable) else {
+                // A click on empty space or text clears the selection and selects text as usual.
+                library.clearAnnotationSelection()
+                return false
+            }
+            if event.modifierFlags.contains(.shift) {
+                library.select(movable, extending: true)
+                return true
+            }
+            let wasSelected = library.isSelected(movable)
+            if !wasSelected { library.select(movable, extending: false) }
+            let group = library.selectedAnnotations.filter { ReaderLibrary.isMovable($0) && $0.page === page }
+            drag = .move(page: page, clicked: movable, annotations: group, originals: group.map(AnnotationGeometry.init), start: point, moved: false, wasSelected: wasSelected)
             return true
         case .highlight, .underline, .strikeOut:
             return false
@@ -75,10 +96,17 @@ final class AnnotationToolHandler {
             let point = view.convert(viewPoint, to: page)
             self.drag = .shape(page: page, tool: tool, start: start, end: point)
             showPreview(.shape(tool, from: start, to: point), on: page)
-        case let .move(page, annotation, original, start, _):
+        case let .move(page, clicked, annotations, originals, start, _, wasSelected):
             let point = view.convert(viewPoint, to: page)
-            annotation.bounds = original.offsetBy(dx: point.x - start.x, dy: point.y - start.y)
-            self.drag = .move(page: page, annotation: annotation, original: original, start: start, moved: true)
+            for (annotation, original) in zip(annotations, originals) {
+                original.offsetBy(dx: point.x - start.x, dy: point.y - start.y).apply(to: annotation)
+            }
+            self.drag = .move(page: page, clicked: clicked, annotations: annotations, originals: originals, start: start, moved: true, wasSelected: wasSelected)
+            overlayProvider?.overlay(for: page)?.needsDisplay = true
+        case let .resize(page, annotation, handle, original, _):
+            let point = view.convert(viewPoint, to: page)
+            ReaderLibrary.resized(original, type: annotation.type ?? "", handle: handle, to: point).apply(to: annotation)
+            self.drag = .resize(page: page, annotation: annotation, handle: handle, original: original, moved: true)
             overlayProvider?.overlay(for: page)?.needsDisplay = true
         }
         return true
@@ -94,12 +122,16 @@ final class AnnotationToolHandler {
         case let .shape(page, tool, start, end):
             showPreview(nil, on: page)
             library?.addShape(tool, from: start, to: end, on: page)
-        case let .move(_, annotation, original, _, moved):
+        case let .move(_, clicked, annotations, originals, _, moved, wasSelected):
             if moved {
-                library?.commitMove(annotation, from: original)
-            } else {
-                // A click without a drag opens the color and delete popover.
-                library?.onEditAnnotation?(annotation)
+                library?.commitGeometry(annotations, from: originals, actionName: L("Move Annotation"))
+            } else if wasSelected {
+                // A second click on a selected annotation opens its style popover.
+                library?.onEditAnnotation?(clicked)
+            }
+        case let .resize(_, annotation, _, original, moved):
+            if moved {
+                library?.commitGeometry([annotation], from: [original], actionName: L("Resize Annotation"))
             }
         }
         return true
@@ -129,6 +161,27 @@ final class AnnotationToolHandler {
         textEditor = InlineTextBoxEditor(box: box, overlay: overlay, library: library) { [weak self] editor in
             if self?.textEditor === editor { self?.textEditor = nil }
         }
+    }
+
+    /// The handle of a selected, resizable annotation nearest the point. The
+    /// reach is the handle's on-screen size, but at most a quarter of the
+    /// annotation's shorter side, so at low zoom a click inside a small shape
+    /// still moves it instead of grabbing a handle.
+    private func handle(at point: CGPoint, on page: PDFPage) -> (PDFAnnotation, ResizeHandle)? {
+        guard let library, let view else { return nil }
+        let screenReach = Self.handleSize / max(view.scaleFactor, 0.05)
+        var best: (annotation: PDFAnnotation, handle: ResizeHandle, distance: CGFloat)?
+        for annotation in library.selectedAnnotations where annotation.page === page && ReaderLibrary.isResizable(annotation) {
+            let size = annotation.type == "Line" ? screenReach * 4 : min(annotation.bounds.width, annotation.bounds.height)
+            let reach = min(screenReach, max(size / 4, 2))
+            for (handle, center) in ReaderLibrary.handles(for: annotation) {
+                let distance = hypot(center.x - point.x, center.y - point.y)
+                if distance <= reach, distance < (best?.distance ?? .infinity) {
+                    best = (annotation, handle, distance)
+                }
+            }
+        }
+        return best.map { ($0.annotation, $0.handle) }
     }
 
     private func pagePoint(of event: NSEvent) -> (PDFPage, CGPoint)? {

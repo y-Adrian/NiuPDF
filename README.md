@@ -15,6 +15,7 @@ A small native macOS PDF reader built with SwiftUI and PDFKit. It takes inspirat
 - Click markup to change its color, write a note or delete it; "Add Note" attaches a note to the highlighted text
 - Notes show as sharp, constant-size icons with hover preview
 - Annotate tab: expands a tool row with highlight, underline, strikethrough, freehand drawing, text boxes, rectangles, ellipses, arrows and sticky notes; tools stay active until chosen again or Esc
+- Edit annotations: click to select (⇧-click for several), drag handles to resize, drag or use the arrow keys to move, `⌘C`/`⌘X`/`⌘V`/`⌘D` to copy, cut, paste (also onto another page or document) and duplicate, Delete to remove; all undoable
 - Line width for drawings and shapes, and font family and size for text boxes, from the tool row or by clicking an annotation
 - Export tab: save a PDF copy with annotations kept or flattened, or export pages as PNG or JPEG at 72, 150 or 300 dpi
 - Settings (`⌘,`) to choose the interface language: follow the system, English or Simplified Chinese

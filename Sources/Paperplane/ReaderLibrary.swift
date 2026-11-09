@@ -187,7 +187,16 @@ final class ReaderLibrary: ObservableObject {
     /// The markup tool last applied, which the context menu's colors apply to.
     var lastMarkupTool: AnnotationTool = .highlight
     @Published var activeTool: AnnotationTool = .select {
-        didSet { if activeTool != oldValue { onToolChange?() } }
+        didSet {
+            guard activeTool != oldValue else { return }
+            if activeTool != .select { selectedAnnotations = [] }
+            onToolChange?()
+        }
+    }
+    /// Annotations selected for editing: their frame and handles are drawn by
+    /// the page overlay, and Delete, arrow keys, copy and paste act on them.
+    @Published var selectedAnnotations: [PDFAnnotation] = [] {
+        didSet { (pdfView as? AnnotationOverlayHost)?.refreshAnnotationOverlays() }
     }
     /// The toolbar tab whose row is expanded under the toolbar; one at a time.
     /// Leaving the annotation row returns to plain selection.
@@ -358,6 +367,7 @@ final class ReaderLibrary: ObservableObject {
         searchResultIndex = 0
         selectedPages = []
         pageSelectionAnchor = nil
+        selectedAnnotations = []
         errorMessage = nil
         AppModel.shared.noteOpened(url)
     }
@@ -1130,18 +1140,6 @@ final class ReaderLibrary: ObservableObject {
         ["FreeText", "Ink", "Square", "Circle", "Line"].contains(annotation.type ?? "")
     }
 
-    /// Records a finished drag; the bounds were already updated while dragging.
-    func commitMove(_ annotation: PDFAnnotation, from previous: CGRect) {
-        let moved = annotation.bounds
-        guard moved != previous else { return }
-        pdfView?.undoManager?.registerUndo(withTarget: self) { target in
-            annotation.bounds = previous
-            target.commitMove(annotation, from: moved)
-        }
-        pdfView?.undoManager?.setActionName(L("Move Annotation"))
-        annotationsDidChange()
-    }
-
     /// The color an annotation shows: the text color for text boxes.
     func displayColor(of annotation: PDFAnnotation) -> NSColor {
         annotation.type == "FreeText" ? (annotation.fontColor ?? .black) : annotation.color
@@ -1224,7 +1222,7 @@ final class ReaderLibrary: ObservableObject {
     }
 
     /// Hides PDFKit's rendering of an annotation the overlay draws instead.
-    private func handOverToOverlay(_ annotation: PDFAnnotation) {
+    func handOverToOverlay(_ annotation: PDFAnnotation) {
         annotation.shouldDisplay = false
         hiddenNativeAnnotations[ObjectIdentifier(annotation)] = annotation
     }
@@ -1329,7 +1327,7 @@ final class ReaderLibrary: ObservableObject {
     }
 
     /// Runs an annotation mutation as one undo step.
-    private func recordAnnotationEdit(_ actionName: String, pages: [PDFPage], _ body: () -> Void) {
+    func recordAnnotationEdit(_ actionName: String, pages: [PDFPage], _ body: () -> Void) {
         commit(captureAnnotationEdit(pages: pages, body), actionName: actionName)
     }
 
@@ -1363,6 +1361,10 @@ final class ReaderLibrary: ObservableObject {
         }
         hasUnsavedChanges = changeCount != savedChangeCount
         annotationRevision += 1
+        // Deleted, cut or undone annotations leave the selection.
+        if selectedAnnotations.contains(where: { $0.page == nil }) {
+            selectedAnnotations.removeAll { $0.page == nil }
+        }
         refreshPDFView()
         scheduleAutosave()
     }

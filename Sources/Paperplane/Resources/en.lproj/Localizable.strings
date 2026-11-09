@@ -175,3 +175,9 @@
 "Move Pages" = "Move Pages";
 "%@ (Extract)" = "%@ (Extract)";
 "A document needs at least one page." = "A document needs at least one page.";
+"Duplicate" = "Duplicate";
+"Delete Selected Annotations" = "Delete Selected Annotations";
+"Resize Annotation" = "Resize Annotation";
+"Paste" = "Paste";
+"Cut" = "Cut";
+"Delete %ld Annotations" = "Delete %ld Annotations";

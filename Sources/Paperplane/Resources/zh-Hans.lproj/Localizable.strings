@@ -175,3 +175,9 @@
 "Move Pages" = "移动页面";
 "%@ (Extract)" = "%@（摘录）";
 "A document needs at least one page." = "文稿至少需要保留一页。";
+"Duplicate" = "制作副本";
+"Delete Selected Annotations" = "删除所选批注";
+"Resize Annotation" = "调整批注大小";
+"Paste" = "粘贴";
+"Cut" = "剪切";
+"Delete %ld Annotations" = "删除 %ld 个批注";

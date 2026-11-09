@@ -43,11 +43,7 @@ struct ReaderWindow: View {
                                     library.goToPage(index + 1)
                                 }
                             case .annotations:
-                                AnnotationListSidebar(
-                                    items: library.annotationListItems(),
-                                    onSelect: { library.reveal($0.annotation) },
-                                    onDelete: { library.deleteAnnotation($0.annotation) }
-                                )
+                                AnnotationListSidebar(items: library.annotationListItems())
                             case .searchResults:
                                 SearchResultsSidebar(
                                     results: library.searchResults,
