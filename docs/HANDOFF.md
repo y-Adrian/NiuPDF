@@ -40,6 +40,16 @@
 - `PDFView` 未公开 `validateMenuItem`，需通过运行时调用其实现。
 - 沙盒应用打印需要 `com.apple.security.print`；沙盒只授权所选文件而非其文件夹。
 
+## 诊断日志
+
+打开文件的每一步记在 `Logger.opening`（子系统 `app.paperplane.reader`，类别 `open`）。出问题后运行：
+
+```
+log show --last 10m --info --predicate 'subsystem == "app.paperplane.reader" AND category == "open"'
+```
+
+“⌘O 选了文件却没打开”尚未复现，见 DEVELOPMENT_LOG 阶段 3D-5。
+
 ## 本地探针（验证方法）
 
 验证新功能时，把 `Sources/Paperplane/*.swift` 与 `Sources/PaperplaneCore/*.swift` 拷到临时目录（删除 `import PaperplaneCore` 行），加一个 `@main` 的 `main.swift`，编译后放进一个最小 `.app` 包（含两份 `Localizable.strings` 合并后的 `lproj`），用 `-AppleLanguages "(zh-Hans)"` 运行，直接调用 `ReaderLibrary` 或向 `PDFView` 发送 `NSEvent`。注意：

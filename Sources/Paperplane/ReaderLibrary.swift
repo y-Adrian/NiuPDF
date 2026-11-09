@@ -1,4 +1,5 @@
 import AppKit
+import OSLog
 import PDFKit
 import PaperplaneCore
 import SwiftUI
@@ -324,6 +325,7 @@ final class ReaderLibrary: ObservableObject {
             opened = try SafePDFFileStore.read(from: url)
         } catch {
             if didStartAccess { url.stopAccessingSecurityScopedResource() }
+            Logger.opening.error("Couldn’t read \(url.lastPathComponent, privacy: .public): \(String(describing: error), privacy: .public)")
             errorMessage = error.localizedDescription
             return
         }
@@ -331,6 +333,7 @@ final class ReaderLibrary: ObservableObject {
         let previousPassword = documentPassword
         documentPassword = nil
         if opened.document.isLocked, !unlock(opened.document, named: url.lastPathComponent) {
+            Logger.opening.info("Password entry cancelled for \(url.lastPathComponent, privacy: .public)")
             documentPassword = previousPassword
             if didStartAccess { url.stopAccessingSecurityScopedResource() }
             return
@@ -370,6 +373,7 @@ final class ReaderLibrary: ObservableObject {
         selectedAnnotations = []
         errorMessage = nil
         AppModel.shared.noteOpened(url)
+        Logger.opening.info("Opened \(url.lastPathComponent, privacy: .public) (\(opened.document.pageCount) pages) in window \(self.window?.windowNumber ?? -1); window visible: \(self.window?.isVisible ?? false)")
     }
 
     /// Asks for the user password of an encrypted PDF until it unlocks or the user cancels.

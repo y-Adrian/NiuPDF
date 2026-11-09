@@ -1,6 +1,13 @@
 import AppKit
+import OSLog
 import PDFKit
 import SwiftUI
+
+extension Logger {
+    /// Each step of opening files, for finding where an open stopped:
+    /// log show --last 10m --info --predicate 'subsystem == "app.paperplane.reader" AND category == "open"'
+    static let opening = Logger(subsystem: "app.paperplane.reader", category: "open")
+}
 
 /// A file in the "recent" list. The bookmark keeps sandbox access to the file
 /// across launches.
@@ -70,6 +77,7 @@ final class AppModel: ObservableObject {
     private var pendingExternalFiles: [URL] = []
 
     private struct WindowRequest {
+        let id = UUID()
         var url: URL?
         weak var tabParent: NSWindow?
     }
@@ -113,19 +121,29 @@ final class AppModel: ObservableObject {
     /// Called by a new window once its NSWindow exists: it takes its pending
     /// request, opening a file and joining a tab group as asked.
     func windowDidAppear(_ library: ReaderLibrary, window: NSWindow) {
-        guard !pendingWindowRequests.isEmpty else { return }
+        guard !pendingWindowRequests.isEmpty else {
+            Logger.opening.info("Window \(window.windowNumber) appeared with no request")
+            return
+        }
         let request = pendingWindowRequests.removeFirst()
+        Logger.opening.info("Window \(window.windowNumber) took the request for \(request.url?.lastPathComponent ?? "a new tab", privacy: .public); \(self.pendingWindowRequests.count) still waiting")
         if let parent = request.tabParent, parent !== window, parent.isVisible {
             // SwiftUI sizes a new window to its content on its first layout,
             // which comes after this call. Joining the tab group now would let
             // that resize the whole group, so join one turn later, at the
             // group's size.
             DispatchQueue.main.async {
-                guard parent.isVisible else { return }
+                guard parent.isVisible else {
+                    Logger.opening.error("Window \(window.windowNumber) not added as a tab: its parent window is no longer visible")
+                    return
+                }
                 window.setFrame(parent.frame, display: false)
                 parent.addTabbedWindow(window, ordered: .above)
                 window.makeKeyAndOrderFront(nil)
+                Logger.opening.info("Window \(window.windowNumber) joined the tabs of window \(parent.windowNumber); visible: \(window.isVisible)")
             }
+        } else if request.tabParent != nil {
+            Logger.opening.info("Window \(window.windowNumber) opens on its own: the requested tab parent is gone or hidden")
         }
         if let url = request.url {
             library.open(url, confirmingUnsavedChanges: false)
@@ -141,8 +159,15 @@ final class AppModel: ObservableObject {
     }
 
     private func requestWindow(url: URL?, tabParent: NSWindow?) {
-        pendingWindowRequests.append(WindowRequest(url: url, tabParent: tabParent))
+        let request = WindowRequest(url: url, tabParent: tabParent)
+        pendingWindowRequests.append(request)
+        Logger.opening.info("Requested a window for \(url?.lastPathComponent ?? "a new tab", privacy: .public) (tab of window \(tabParent?.windowNumber ?? -1)); \(self.pendingWindowRequests.count) waiting; open action set: \(self.openWindowAction != nil)")
         openWindowAction?()
+        // A window normally appears within a few hundred milliseconds.
+        DispatchQueue.main.asyncAfter(deadline: .now() + 3) { [weak self] in
+            guard let self, self.pendingWindowRequests.contains(where: { $0.id == request.id }) else { return }
+            Logger.opening.fault("No window appeared for \(url?.lastPathComponent ?? "a new tab", privacy: .public) after 3 seconds; \(self.pendingWindowRequests.count) requests waiting")
+        }
     }
 
     // MARK: Opening
@@ -152,7 +177,9 @@ final class AppModel: ObservableObject {
     /// rest open as tabs next to it.
     func open(_ urls: [URL], preferring preferred: ReaderLibrary? = nil) {
         let target = preferred ?? activeLibrary
+        Logger.opening.info("Open \(urls.map(\.lastPathComponent).joined(separator: ", "), privacy: .public) into \(target.map { $0.fileURL?.lastPathComponent ?? "an empty window" } ?? "no window", privacy: .public)")
         guard target != nil || openWindowAction != nil else {
+            Logger.opening.info("No window yet; the files wait for the first one")
             pendingExternalFiles += urls
             return
         }
@@ -160,6 +187,7 @@ final class AppModel: ObservableObject {
         var lastShown: ReaderLibrary?
         for url in urls {
             if let open = library(showing: url) {
+                Logger.opening.info("\(url.lastPathComponent, privacy: .public) is already open in window \(open.window?.windowNumber ?? -1)")
                 lastShown = open
             } else if !newFiles.contains(where: { $0.standardizedFileURL == url.standardizedFileURL }) {
                 newFiles.append(url)
@@ -194,7 +222,11 @@ final class AppModel: ObservableObject {
         panel.allowsMultipleSelection = true
         panel.canChooseDirectories = false
         panel.prompt = L("Open")
-        guard panel.runModal() == .OK else { return }
+        guard panel.runModal() == .OK else {
+            Logger.opening.info("Open panel cancelled")
+            return
+        }
+        Logger.opening.info("Open panel chose \(panel.urls.count) files")
         open(panel.urls, preferring: library)
     }
 
