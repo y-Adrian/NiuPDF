@@ -23,9 +23,11 @@ struct PDFCanvas: NSViewRepresentable {
         view.maxScaleFactor = 5
         view.displaysAsBook = library.layoutMode.displaysAsBook
         library.pdfView = view
-        library.onNoteCreated = { [weak view] note, page in
+        view.overlayProvider.library = library
+        view.pageOverlayViewProvider = view.overlayProvider
+        library.onEditAnnotation = { [weak view] annotation in
             // Let the context menu finish dismissing before the popover appears.
-            DispatchQueue.main.async { view?.editNote(note, on: page) }
+            DispatchQueue.main.async { view?.editAnnotation(annotation) }
         }
         view.window?.isDocumentEdited = library.hasUnsavedChanges
         if let page = document.page(at: library.currentPageIndex) { view.go(to: page) }
@@ -75,7 +77,11 @@ struct PDFCanvas: NSViewRepresentable {
 
         @objc func scaleChanged(_ notification: Notification) {
             guard let view = notification.object as? PDFView else { return }
-            Task { @MainActor in library.updateZoomScale(view.scaleFactor) }
+            Task { @MainActor in
+                library.updateZoomScale(view.scaleFactor)
+                // Note icons keep a constant on-screen size, so redraw them for the new scale.
+                (view as? AnnotationOverlayHost)?.refreshAnnotationOverlays()
+            }
         }
     }
 }
@@ -193,113 +199,64 @@ private final class MarkupColorSwatchButton: NSButton {
     }
 }
 
-/// Popover editor for a `/Text` note's contents. Text is committed when the
-/// popover closes, so clicking elsewhere keeps what was typed.
-private final class NoteEditorController: NSViewController, NSPopoverDelegate {
-    private let note: PDFAnnotation
-    private weak var library: ReaderLibrary?
-    private let textView = NSTextView()
-    private var isDeleted = false
-    weak var popover: NSPopover?
-
-    init(note: PDFAnnotation, library: ReaderLibrary) {
-        self.note = note
-        self.library = library
-        super.init(nibName: nil, bundle: nil)
-    }
-
-    required init?(coder: NSCoder) { nil }
-
-    override func loadView() {
-        let scrollView = NSScrollView(frame: NSRect(x: 0, y: 0, width: 260, height: 120))
-        scrollView.hasVerticalScroller = true
-        scrollView.borderType = .bezelBorder
-        textView.frame = NSRect(origin: .zero, size: scrollView.contentSize)
-        textView.minSize = NSSize(width: 0, height: scrollView.contentSize.height)
-        textView.maxSize = NSSize(width: CGFloat.greatestFiniteMagnitude, height: CGFloat.greatestFiniteMagnitude)
-        textView.isVerticallyResizable = true
-        textView.autoresizingMask = [.width]
-        textView.textContainer?.widthTracksTextView = true
-        textView.isRichText = false
-        textView.allowsUndo = true
-        textView.font = .systemFont(ofSize: 13)
-        textView.textContainerInset = NSSize(width: 4, height: 6)
-        textView.string = library?.noteContents(note) ?? ""
-        scrollView.documentView = textView
-
-        let deleteButton = NSButton(title: "删除笔记", target: self, action: #selector(deleteNote))
-        deleteButton.bezelStyle = .rounded
-        deleteButton.contentTintColor = .systemRed
-        let doneButton = NSButton(title: "完成", target: self, action: #selector(finish))
-        doneButton.bezelStyle = .rounded
-        // Plain Return inserts a line break in the note; ⌘Return finishes.
-        doneButton.keyEquivalent = "\r"
-        doneButton.keyEquivalentModifierMask = .command
-        doneButton.toolTip = "完成（⌘↩）"
-        let buttons = NSStackView(views: [deleteButton, NSView(), doneButton])
-        buttons.orientation = .horizontal
-
-        let stack = NSStackView(views: [scrollView, buttons])
-        stack.orientation = .vertical
-        stack.alignment = .leading
-        stack.spacing = 8
-        stack.edgeInsets = NSEdgeInsets(top: 10, left: 10, bottom: 10, right: 10)
-        scrollView.widthAnchor.constraint(equalToConstant: 260).isActive = true
-        scrollView.heightAnchor.constraint(equalToConstant: 120).isActive = true
-        buttons.widthAnchor.constraint(equalTo: scrollView.widthAnchor).isActive = true
-        view = stack
-    }
-
-    override func viewDidAppear() {
-        super.viewDidAppear()
-        view.window?.makeFirstResponder(textView)
-    }
-
-    @objc private func finish() { popover?.performClose(nil) }
-
-    @objc private func deleteNote() {
-        isDeleted = true
-        library?.deleteAnnotation(note)
-        popover?.performClose(nil)
-    }
-
-    func popoverWillClose(_ notification: Notification) {
-        guard !isDeleted else { return }
-        library?.setNoteContents(note, to: textView.string)
-    }
-}
-
-/// Adds native PDF text markup actions to the selected text's contextual menu.
-private final class MarkupPDFView: PDFView {
+/// Adds native PDF text markup actions to the selected text's contextual menu,
+/// and opens the annotation editor when markup or a note icon is clicked.
+private final class MarkupPDFView: PDFView, AnnotationOverlayHost {
     weak var readerLibrary: ReaderLibrary?
+    let overlayProvider = AnnotationOverlayProvider()
     private var contextMenuSelection: PDFSelection?
-    private var notePopover: NSPopover?
+    private var editorPopover: NSPopover?
+    private var pendingMarkupClick: PDFAnnotation?
 
-    /// Clicking a note opens its editor instead of starting a text selection.
-    override func mouseDown(with event: NSEvent) {
-        let viewPoint = convert(event.locationInWindow, from: nil)
-        if event.clickCount == 1,
-           let page = page(for: viewPoint, nearest: false),
-           let note = page.annotation(at: convert(viewPoint, to: page)),
-           note.type == "Text" {
-            editNote(note, on: page)
-            return
-        }
-        super.mouseDown(with: event)
+    func refreshAnnotationOverlays() {
+        overlayProvider.refreshAll()
     }
 
-    func editNote(_ note: PDFAnnotation, on page: PDFPage) {
-        guard let readerLibrary, window != nil else { return }
-        notePopover?.close()
-        let controller = NoteEditorController(note: note, library: readerLibrary)
+    /// A plain click on markup opens its editor, as in PDF Expert; dragging over
+    /// it still selects text. PDFView may track the drag inside `mouseDown`, so
+    /// the click is resolved after it returns or in `mouseUp`, whichever comes.
+    override func mouseDown(with event: NSEvent) {
+        pendingMarkupClick = event.clickCount == 1 ? markup(at: event) : nil
+        super.mouseDown(with: event)
+        if NSEvent.pressedMouseButtons & 1 == 0 { resolvePendingMarkupClick() }
+    }
+
+    override func mouseUp(with event: NSEvent) {
+        super.mouseUp(with: event)
+        resolvePendingMarkupClick()
+    }
+
+    private func resolvePendingMarkupClick() {
+        guard let annotation = pendingMarkupClick else { return }
+        pendingMarkupClick = nil
+        guard (currentSelection?.string ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
+        editAnnotation(annotation)
+    }
+
+    /// Markup whose text lines, not just its overall bounds, contain the click.
+    private func markup(at event: NSEvent) -> PDFAnnotation? {
+        let viewPoint = convert(event.locationInWindow, from: nil)
+        guard let page = page(for: viewPoint, nearest: false) else { return nil }
+        let point = convert(viewPoint, to: page)
+        return page.annotations.last { annotation in
+            MarkupEngine.isMarkup(annotation)
+                && MarkupEngine.lineRects(of: annotation).contains { $0.insetBy(dx: -1, dy: -1).contains(point) }
+        }
+    }
+
+    func editAnnotation(_ annotation: PDFAnnotation) {
+        guard let readerLibrary, window != nil, let page = annotation.page else { return }
+        editorPopover?.close()
+        let controller = AnnotationEditorController(annotation: annotation, library: readerLibrary)
         let popover = NSPopover()
         popover.behavior = .transient
         popover.contentViewController = controller
         popover.delegate = controller
         controller.popover = popover
-        notePopover = popover
-        let anchor = convert(note.bounds, from: page)
-        popover.show(relativeTo: anchor, of: self, preferredEdge: .maxY)
+        editorPopover = popover
+        let lines = MarkupEngine.isMarkup(annotation) ? MarkupEngine.lineRects(of: annotation) : [annotation.bounds]
+        let anchor = lines.max(by: { $0.maxY < $1.maxY }) ?? annotation.bounds
+        popover.show(relativeTo: convert(anchor, from: page), of: self, preferredEdge: .maxY)
     }
 
     override func menu(for event: NSEvent) -> NSMenu? {
@@ -320,8 +277,12 @@ private final class MarkupPDFView: PDFView {
         editingItems.append(colorRow(iconStyle: .highlight, accessibilityPrefix: "高亮", iconAction: #selector(highlightFromIcon), colorAction: #selector(applyHighlightFromRow(_:)), selectedColor: readerLibrary?.selectedHighlightColor ?? .yellow))
         editingItems.append(colorRow(iconStyle: .underline, accessibilityPrefix: "下划线", iconAction: #selector(toggleUnderlineFromIcon), colorAction: #selector(applyUnderlineFromRow(_:)), selectedColor: readerLibrary?.selectedUnderlineColor ?? .yellow))
         editingItems.append(colorRow(iconStyle: .strikethrough, accessibilityPrefix: "删除线", iconAction: #selector(toggleStrikeOutFromIcon), colorAction: #selector(applyStrikeOutFromRow(_:)), selectedColor: readerLibrary?.selectedStrikeOutColor ?? .yellow))
-        let hasNote = readerLibrary?.hasNoteAnnotation(in: selection) == true
-        editingItems.append(actionItem(hasNote ? "Remove Note" : "Add Note", action: #selector(toggleNoteAnnotation)))
+        if readerLibrary?.notedMarkup(in: selection) != nil {
+            editingItems.append(actionItem("编辑笔记", action: #selector(addNote)))
+            editingItems.append(actionItem("删除笔记", action: #selector(removeNote)))
+        } else {
+            editingItems.append(actionItem("添加笔记", action: #selector(addNote)))
+        }
         editingItems.append(.separator())
 
         for item in editingItems.reversed() { menu.insertItem(item, at: 0) }
@@ -428,9 +389,13 @@ private final class MarkupPDFView: PDFView {
         readerLibrary?.applyHighlight(color: MarkupColor.allCases[sender.tag], to: contextMenuSelection)
         updateSelectedSwatch(in: sender)
     }
-    @objc private func toggleNoteAnnotation() {
+    @objc private func addNote() {
         guard let contextMenuSelection else { return }
-        readerLibrary?.toggleNoteAnnotation(in: contextMenuSelection)
+        readerLibrary?.addNote(in: contextMenuSelection)
+    }
+    @objc private func removeNote() {
+        guard let contextMenuSelection else { return }
+        readerLibrary?.removeNote(in: contextMenuSelection)
     }
     @objc private func toggleUnderlineFromIcon() {
         guard let contextMenuSelection else { return }
@@ -657,6 +622,13 @@ struct AnnotationListSidebar: View {
                     .foregroundStyle(item.text.isEmpty ? .tertiary : .primary)
                     .lineLimit(3)
                     .multilineTextAlignment(.leading)
+                if !item.note.isEmpty {
+                    Label(item.note, systemImage: "text.bubble")
+                        .font(.system(size: 12))
+                        .foregroundStyle(.secondary)
+                        .lineLimit(3)
+                        .multilineTextAlignment(.leading)
+                }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
         }
