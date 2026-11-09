@@ -1,6 +1,5 @@
 /* UI strings. Keys are the English text; keep every key in both en and zh-Hans. */
 
-"%@ %@" = "%@%@";
 "%@ · Page %ld" = "%@ · 第 %ld 页";
 "%@: %@" = "%@：%@";
 "(No text)" = "（无文字）";
@@ -34,7 +33,6 @@
 "Fit Width" = "适合宽度";
 "Green" = "绿色";
 "Highlight" = "高亮";
-"Highlight in the current color" = "使用当前颜色高亮";
 "Incorrect password. Try again." = "密码不正确，请重试。";
 "Line" = "线条";
 "Match Case" = "区分大小写";
@@ -75,8 +73,6 @@
 "The document is open, but it couldn’t be remembered for next time." = "文稿已打开，但无法记住它以供下次恢复。";
 "This PDF has no embedded outline." = "此 PDF 没有嵌入目录大纲。";
 "Thumbnails" = "缩略图";
-"Toggle strikethrough in the current color" = "使用当前颜色切换删除线";
-"Toggle underline in the current color" = "使用当前颜色切换下划线";
 "Two Pages Continuous" = "双页连续";
 "Underline" = "下划线";
 "Untitled" = "未命名条目";

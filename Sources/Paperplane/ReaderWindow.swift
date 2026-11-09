@@ -430,7 +430,7 @@ private struct AnnotationToolBar: View {
 
     private func toolButton(_ tool: AnnotationTool) -> some View {
         Button { toggle(tool) } label: {
-            toolLabel(symbol: tool.symbol, isActive: library.activeTool == tool)
+            toolLabel(for: tool, isActive: library.activeTool == tool)
         }
         .buttonStyle(.plain)
         .help(tool.title)
@@ -494,8 +494,22 @@ private struct AnnotationToolBar: View {
     }
 
     private func toolLabel(symbol: String, isActive: Bool) -> some View {
-        Image(systemName: symbol)
-            .font(.system(size: 15))
+        toolLabel(isActive: isActive) { Image(systemName: symbol).font(.system(size: 15)) }
+    }
+
+    /// Markup tools use the same lettered icons as the context menu.
+    private func toolLabel(for tool: AnnotationTool, isActive: Bool) -> some View {
+        toolLabel(isActive: isActive) {
+            if tool.marksText {
+                Image(nsImage: MarkupGlyph.image(for: tool, side: 20))
+            } else {
+                Image(systemName: tool.symbol).font(.system(size: 15))
+            }
+        }
+    }
+
+    private func toolLabel<Content: View>(isActive: Bool, @ViewBuilder content: () -> Content) -> some View {
+        content()
             .frame(width: 30, height: 26)
             .background(isActive ? Color.accentColor.opacity(0.15) : .clear, in: RoundedRectangle(cornerRadius: 6))
             .foregroundStyle(isActive ? Color.accentColor : .primary)

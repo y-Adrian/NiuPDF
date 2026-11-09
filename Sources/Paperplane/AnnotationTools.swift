@@ -307,3 +307,48 @@ enum VectorAnnotationRenderer {
         (box.contents ?? "").draw(with: rect, options: [.usesLineFragmentOrigin], attributes: attributes)
     }
 }
+
+/// The highlight, underline and strikethrough icons: a letter on a yellow
+/// block, or with a red line under or through it. The toolbar and the context
+/// menu both use these so the tools look the same everywhere.
+enum MarkupGlyph {
+    /// An image drawn when displayed, so the letter follows light and dark mode.
+    static func image(for tool: AnnotationTool, side: CGFloat) -> NSImage {
+        let image = NSImage(size: NSSize(width: side, height: side), flipped: false) { rect in
+            draw(tool, in: rect)
+            return true
+        }
+        image.isTemplate = false
+        image.accessibilityDescription = tool.title
+        return image
+    }
+
+    private static func draw(_ tool: AnnotationTool, in rect: CGRect) {
+        let side = min(rect.width, rect.height)
+        if tool == .highlight {
+            let block = CGRect(x: rect.midX - side * 0.4, y: rect.midY - side * 0.4, width: side * 0.8, height: side * 0.8)
+            NSColor(calibratedRed: 1, green: 0.82, blue: 0.16, alpha: 1).setFill()
+            NSBezierPath(roundedRect: block, xRadius: side * 0.08, yRadius: side * 0.08).fill()
+        }
+        let font = NSFont.systemFont(ofSize: side * 0.68, weight: .regular)
+        let attributes: [NSAttributedString.Key: Any] = [
+            .font: font,
+            .foregroundColor: tool == .highlight ? NSColor.black : NSColor.labelColor
+        ]
+        let letter = "A" as NSString
+        let size = letter.size(withAttributes: attributes)
+        // Center the capital letter itself, not the line box around it.
+        let baseline = rect.midY - font.capHeight / 2
+        letter.draw(at: CGPoint(x: rect.midX - size.width / 2, y: baseline + font.descender), withAttributes: attributes)
+
+        guard tool == .underline || tool == .strikeOut else { return }
+        let lineY = tool == .underline ? baseline - side * 0.1 : baseline + font.capHeight * 0.45
+        let line = NSBezierPath()
+        line.lineWidth = max(1.4, side * 0.07)
+        line.lineCapStyle = .round
+        line.move(to: CGPoint(x: rect.midX - size.width / 2 - side * 0.06, y: lineY))
+        line.line(to: CGPoint(x: rect.midX + size.width / 2 + side * 0.06, y: lineY))
+        NSColor.systemRed.setStroke()
+        line.stroke()
+    }
+}

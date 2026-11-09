@@ -1,6 +1,5 @@
 /* UI strings. Keys are the English text; keep every key in both en and zh-Hans. */
 
-"%@ %@" = "%@ %@";
 "%@ · Page %ld" = "%@ · Page %ld";
 "%@: %@" = "%@: %@";
 "(No text)" = "(No text)";
@@ -34,7 +33,6 @@
 "Fit Width" = "Fit Width";
 "Green" = "Green";
 "Highlight" = "Highlight";
-"Highlight in the current color" = "Highlight in the current color";
 "Incorrect password. Try again." = "Incorrect password. Try again.";
 "Line" = "Line";
 "Match Case" = "Match Case";
@@ -75,8 +73,6 @@
 "The document is open, but it couldn’t be remembered for next time." = "The document is open, but it couldn’t be remembered for next time.";
 "This PDF has no embedded outline." = "This PDF has no embedded outline.";
 "Thumbnails" = "Thumbnails";
-"Toggle strikethrough in the current color" = "Toggle strikethrough in the current color";
-"Toggle underline in the current color" = "Toggle underline in the current color";
 "Two Pages Continuous" = "Two Pages Continuous";
 "Underline" = "Underline";
 "Untitled" = "Untitled";

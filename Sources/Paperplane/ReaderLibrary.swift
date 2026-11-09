@@ -156,6 +156,8 @@ final class ReaderLibrary: ObservableObject {
     @Published var selectedStrikeOutColor: MarkupColor = .yellow
     /// Color for text boxes, drawings and shapes.
     @Published var drawingColor: MarkupColor = .red
+    /// The markup tool last applied, which the context menu's colors apply to.
+    var lastMarkupTool: AnnotationTool = .highlight
     @Published var activeTool: AnnotationTool = .select {
         didSet { if activeTool != oldValue { onToolChange?() } }
     }
@@ -539,6 +541,7 @@ final class ReaderLibrary: ObservableObject {
     }
 
     private func editMarkup(_ type: PDFAnnotationSubtype, color: MarkupColor, in selection: PDFSelection, intent: MarkupIntent) {
+        lastMarkupTool = type == .underline ? .underline : (type == .strikeOut ? .strikeOut : .highlight)
         recordAnnotationEdit(markupActionName(type), pages: selection.pages) {
             for page in selection.pages {
                 applyMarkup(type, color: color.nsColor, characters: MarkupEngine.characters(of: selection, on: page), on: page, intent: intent)

@@ -91,16 +91,12 @@ struct PDFCanvas: NSViewRepresentable {
 }
 
 private final class MarkupToolIconButton: NSButton {
-    enum Style {
-        case highlight
-        case underline
-        case strikethrough
-    }
+    let tool: AnnotationTool
+    private(set) var isSelectedTool: Bool
 
-    private let style: Style
-
-    init(style: Style, target: AnyObject, action: Selector) {
-        self.style = style
+    init(tool: AnnotationTool, selected: Bool, target: AnyObject, action: Selector) {
+        self.tool = tool
+        isSelectedTool = selected
         super.init(frame: .zero)
         title = ""
         self.target = target
@@ -115,40 +111,28 @@ private final class MarkupToolIconButton: NSButton {
 
     required init?(coder: NSCoder) { nil }
 
-    override var intrinsicContentSize: NSSize { NSSize(width: 24, height: 24) }
+    override var intrinsicContentSize: NSSize { NSSize(width: 26, height: 26) }
+
+    func setSelectedTool(_ selected: Bool) {
+        guard isSelectedTool != selected else { return }
+        isSelectedTool = selected
+        setAccessibilityValue(selected ? L("Selected") : nil)
+        needsDisplay = true
+    }
 
     override func draw(_ dirtyRect: NSRect) {
-        super.draw(dirtyRect)
-
-        let box = CGRect(x: bounds.midX - 9, y: bounds.midY - 9, width: 18, height: 18)
-        if style == .highlight {
-            NSColor.systemYellow.setFill()
-            NSBezierPath(rect: box).fill()
+        if isSelectedTool {
+            NSColor.labelColor.withAlphaComponent(0.14).setFill()
+            NSBezierPath(roundedRect: bounds, xRadius: 5, yRadius: 5).fill()
         }
-
-        let glyph = "A" as NSString
-        let font = NSFont.systemFont(ofSize: 17, weight: .regular)
-        let attributes: [NSAttributedString.Key: Any] = [
-            .font: font,
-            .foregroundColor: NSColor.labelColor,
-        ]
-        let glyphSize = glyph.size(withAttributes: attributes)
-        let origin = CGPoint(
-            x: bounds.midX - glyphSize.width / 2,
-            y: bounds.midY - glyphSize.height / 2
+        MarkupGlyph.image(for: tool, side: 22).draw(
+            in: bounds.insetBy(dx: 2, dy: 2),
+            from: .zero,
+            operation: .sourceOver,
+            fraction: 1,
+            respectFlipped: true,
+            hints: nil
         )
-        glyph.draw(at: origin, withAttributes: attributes)
-
-        guard style != .highlight else { return }
-        NSColor.systemRed.setStroke()
-        let line = NSBezierPath()
-        line.lineWidth = 1.6
-        // AppKit's button drawing coordinates place the string's origin at the top
-        // edge here, so the underline belongs near the far edge of the glyph box.
-        let y = style == .underline ? origin.y + glyphSize.height - 2 : origin.y + glyphSize.height * 0.56
-        line.move(to: CGPoint(x: origin.x - 2, y: y))
-        line.line(to: CGPoint(x: origin.x + glyphSize.width + 2, y: y))
-        line.stroke()
     }
 }
 
@@ -324,9 +308,7 @@ private final class MarkupPDFView: PDFView, AnnotationOverlayHost {
         removeNativeAnnotationItems(from: menu)
         var editingItems: [NSMenuItem] = []
 
-        editingItems.append(colorRow(iconStyle: .highlight, name: L("Highlight"), iconToolTip: L("Highlight in the current color"), iconAction: #selector(highlightFromIcon), colorAction: #selector(applyHighlightFromRow(_:)), selectedColor: readerLibrary?.selectedHighlightColor ?? .yellow))
-        editingItems.append(colorRow(iconStyle: .underline, name: L("Underline"), iconToolTip: L("Toggle underline in the current color"), iconAction: #selector(toggleUnderlineFromIcon), colorAction: #selector(applyUnderlineFromRow(_:)), selectedColor: readerLibrary?.selectedUnderlineColor ?? .yellow))
-        editingItems.append(colorRow(iconStyle: .strikethrough, name: L("Strikethrough"), iconToolTip: L("Toggle strikethrough in the current color"), iconAction: #selector(toggleStrikeOutFromIcon), colorAction: #selector(applyStrikeOutFromRow(_:)), selectedColor: readerLibrary?.selectedStrikeOutColor ?? .yellow))
+        editingItems.append(markupRow())
         if readerLibrary?.notedMarkup(in: selection) != nil {
             editingItems.append(actionItem(L("Edit Note"), action: #selector(addNote)))
             editingItems.append(actionItem(L("Delete Note"), action: #selector(removeNote)))
@@ -388,54 +370,79 @@ private final class MarkupPDFView: PDFView, AnnotationOverlayHost {
         return item
     }
 
-    private func colorRow(
-        iconStyle: MarkupToolIconButton.Style,
-        name: String,
-        iconToolTip: String,
-        iconAction: Selector,
-        colorAction: Selector,
-        selectedColor: MarkupColor,
-    ) -> NSMenuItem {
+    private static let menuMarkupTools: [AnnotationTool] = [.highlight, .underline, .strikeOut]
+    /// The markup tool the context menu's colors apply to.
+    private var menuMarkupTool: AnnotationTool = .highlight
+    private var menuToolButtons: [MarkupToolIconButton] = []
+    private var menuSwatches: [MarkupColorSwatchButton] = []
+
+    /// One row: the three markup tools, then the colors for the chosen tool.
+    /// Clicking a tool marks the text in that tool's current color and selects
+    /// it; clicking a color marks the text with the selected tool in that color.
+    private func markupRow() -> NSMenuItem {
+        menuMarkupTool = readerLibrary?.lastMarkupTool ?? .highlight
         let stack = NSStackView()
         stack.orientation = .horizontal
         stack.alignment = .centerY
         stack.distribution = .fill
         stack.spacing = 4
-        stack.edgeInsets = NSEdgeInsets(top: 2, left: 10, bottom: 2, right: 10)
+        stack.edgeInsets = NSEdgeInsets(top: 3, left: 10, bottom: 3, right: 10)
         stack.setContentHuggingPriority(.required, for: .horizontal)
 
-        let iconButton = MarkupToolIconButton(style: iconStyle, target: self, action: iconAction)
-        iconButton.setFrameSize(NSSize(width: 24, height: 24))
-        iconButton.toolTip = iconToolTip
-        iconButton.setAccessibilityLabel(iconToolTip)
-        stack.addArrangedSubview(iconButton)
+        menuToolButtons = Self.menuMarkupTools.enumerated().map { index, tool in
+            let button = MarkupToolIconButton(tool: tool, selected: tool == menuMarkupTool, target: self, action: #selector(pickMarkupTool(_:)))
+            button.tag = index
+            button.toolTip = tool.title
+            button.setAccessibilityLabel(tool.title)
+            return button
+        }
+        menuToolButtons.forEach(stack.addArrangedSubview)
+        // A wider gap separates the tools from their colors.
+        if let last = menuToolButtons.last { stack.setCustomSpacing(12, after: last) }
 
-        for (index, color) in MarkupColor.allCases.enumerated() {
-            let button = MarkupColorSwatchButton(selected: color == selectedColor, target: self, action: colorAction)
+        let current = readerLibrary?.color(for: menuMarkupTool) ?? .yellow
+        menuSwatches = MarkupColor.allCases.enumerated().map { index, color in
+            let button = MarkupColorSwatchButton(selected: color == current, target: self, action: #selector(applyColorFromRow(_:)))
             button.tag = index
             button.contentTintColor = color.nsColor
-            button.toolTip = L("%@ %@", color.title, name)
-            button.setAccessibilityLabel(button.toolTip ?? color.title)
-            stack.addArrangedSubview(button)
+            button.toolTip = color.title
+            button.setAccessibilityLabel(color.title)
+            return button
         }
+        menuSwatches.forEach(stack.addArrangedSubview)
 
-        let controlCount = MarkupColor.allCases.count + 1
-        let rowWidth = CGFloat(controlCount * 24 + (controlCount - 1) * 4 + 20)
-        stack.frame = NSRect(x: 0, y: 0, width: rowWidth, height: 28)
+        let toolWidth = CGFloat(menuToolButtons.count * 26 + (menuToolButtons.count - 1) * 4)
+        let colorWidth = CGFloat(menuSwatches.count * 24 + (menuSwatches.count - 1) * 4)
+        stack.frame = NSRect(x: 0, y: 0, width: toolWidth + 12 + colorWidth + 20, height: 32)
         let item = NSMenuItem()
         item.view = stack
         return item
     }
 
-    @objc private func highlightFromIcon() {
-        guard let contextMenuSelection else { return }
-        readerLibrary?.toggleHighlight(in: contextMenuSelection)
+    @objc private func pickMarkupTool(_ sender: MarkupToolIconButton) {
+        guard let contextMenuSelection, let readerLibrary else { return }
+        menuMarkupTool = sender.tool
+        for button in menuToolButtons { button.setSelectedTool(button === sender) }
+        switch sender.tool {
+        case .underline: readerLibrary.toggleUnderline(in: contextMenuSelection)
+        case .strikeOut: readerLibrary.toggleStrikeOut(in: contextMenuSelection)
+        default: readerLibrary.toggleHighlight(in: contextMenuSelection)
+        }
+        let current = readerLibrary.color(for: sender.tool)
+        for (index, swatch) in menuSwatches.enumerated() { swatch.setSelectedColor(MarkupColor.allCases[index] == current) }
     }
-    @objc private func applyHighlightFromRow(_ sender: NSButton) {
-        guard MarkupColor.allCases.indices.contains(sender.tag), let contextMenuSelection else { return }
-        readerLibrary?.applyHighlight(color: MarkupColor.allCases[sender.tag], to: contextMenuSelection)
-        updateSelectedSwatch(in: sender)
+
+    @objc private func applyColorFromRow(_ sender: NSButton) {
+        guard MarkupColor.allCases.indices.contains(sender.tag), let contextMenuSelection, let readerLibrary else { return }
+        let color = MarkupColor.allCases[sender.tag]
+        switch menuMarkupTool {
+        case .underline: readerLibrary.applyUnderline(color: color, to: contextMenuSelection)
+        case .strikeOut: readerLibrary.applyStrikeOut(color: color, to: contextMenuSelection)
+        default: readerLibrary.applyHighlight(color: color, to: contextMenuSelection)
+        }
+        for swatch in menuSwatches { swatch.setSelectedColor(swatch === sender) }
     }
+
     @objc private func addNote() {
         guard let contextMenuSelection else { return }
         readerLibrary?.addNote(in: contextMenuSelection)
@@ -444,32 +451,6 @@ private final class MarkupPDFView: PDFView, AnnotationOverlayHost {
         guard let contextMenuSelection else { return }
         readerLibrary?.removeNote(in: contextMenuSelection)
     }
-    @objc private func toggleUnderlineFromIcon() {
-        guard let contextMenuSelection else { return }
-        readerLibrary?.toggleUnderline(in: contextMenuSelection)
-    }
-    @objc private func applyUnderlineFromRow(_ sender: NSButton) {
-        guard MarkupColor.allCases.indices.contains(sender.tag), let contextMenuSelection else { return }
-        readerLibrary?.applyUnderline(color: MarkupColor.allCases[sender.tag], to: contextMenuSelection)
-        updateSelectedSwatch(in: sender)
-    }
-    @objc private func toggleStrikeOutFromIcon() {
-        guard let contextMenuSelection else { return }
-        readerLibrary?.toggleStrikeOut(in: contextMenuSelection)
-    }
-    @objc private func applyStrikeOutFromRow(_ sender: NSButton) {
-        guard MarkupColor.allCases.indices.contains(sender.tag), let contextMenuSelection else { return }
-        readerLibrary?.applyStrikeOut(color: MarkupColor.allCases[sender.tag], to: contextMenuSelection)
-        updateSelectedSwatch(in: sender)
-    }
-
-    private func updateSelectedSwatch(in sender: NSButton) {
-        guard let stack = sender.superview as? NSStackView else { return }
-        for case let swatch as MarkupColorSwatchButton in stack.arrangedSubviews {
-            swatch.setSelectedColor(swatch === sender)
-        }
-    }
-
 }
 
 struct ThumbnailSidebar: View {
