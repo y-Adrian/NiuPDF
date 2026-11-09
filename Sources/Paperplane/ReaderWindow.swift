@@ -11,6 +11,10 @@ struct ReaderWindow: View {
         VStack(spacing: 0) {
             toolbar
             Divider()
+            if library.isAnnotationBarVisible, library.document != nil {
+                AnnotationToolBar()
+                Divider()
+            }
             if let document = library.document {
                 HStack(spacing: 0) {
                     if library.isSidebarVisible {
@@ -141,6 +145,16 @@ struct ReaderWindow: View {
             .labelsHidden()
             .help(L("Page Layout"))
             .disabled(library.document == nil)
+
+            ModeTab(
+                title: L("Annotate"),
+                symbol: "pencil.tip.crop.circle",
+                isActive: library.isAnnotationBarVisible
+            ) {
+                library.isAnnotationBarVisible.toggle()
+            }
+            .disabled(library.document == nil)
+            .help(L("Show or hide the annotation tools"))
 
             Button { library.save() } label: {
                 Image(systemName: "square.and.arrow.down")
@@ -358,5 +372,142 @@ private struct WholeWordBracket: Shape {
         path.addLine(to: CGPoint(x: rect.maxX - inset, y: rect.maxY - inset))
         path.addLine(to: CGPoint(x: rect.maxX - inset, y: rect.minY))
         return path
+    }
+}
+
+/// A toolbar tab that expands a row of tools below the toolbar.
+private struct ModeTab: View {
+    let title: String
+    let symbol: String
+    let isActive: Bool
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            Label(title, systemImage: symbol)
+                .padding(.horizontal, 9)
+                .padding(.vertical, 4)
+                .background(isActive ? Color.accentColor.opacity(0.15) : .clear, in: RoundedRectangle(cornerRadius: 6))
+                .foregroundStyle(isActive ? Color.accentColor : .primary)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityValue(isActive ? L("On") : L("Off"))
+    }
+}
+
+/// The expanded annotation tools: text markup, drawing, text box, shapes and
+/// notes, plus the color of the active tool. Choosing the active tool again
+/// returns to plain selection; so does Esc.
+private struct AnnotationToolBar: View {
+    @EnvironmentObject private var library: ReaderLibrary
+    @State private var lastShape: AnnotationTool = .rectangle
+
+    var body: some View {
+        HStack(spacing: 18) {
+            group([.highlight, .underline, .strikeOut])
+            group([.ink, .textBox])
+            HStack(spacing: 2) {
+                shapeMenu
+                toolButton(.note)
+            }
+            Spacer(minLength: 0)
+            colorMenu
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 5)
+        .frame(maxWidth: .infinity)
+        .background(.bar)
+    }
+
+    private func group(_ tools: [AnnotationTool]) -> some View {
+        HStack(spacing: 2) {
+            ForEach(tools) { toolButton($0) }
+        }
+    }
+
+    private func toolButton(_ tool: AnnotationTool) -> some View {
+        Button { toggle(tool) } label: {
+            toolLabel(symbol: tool.symbol, isActive: library.activeTool == tool)
+        }
+        .buttonStyle(.plain)
+        .help(tool.title)
+        .accessibilityLabel(tool.title)
+        .accessibilityValue(library.activeTool == tool ? L("On") : L("Off"))
+    }
+
+    /// The current shape as a normal tool button (so it can show the active
+    /// state, which a menu button cannot), with a small menu to switch shapes.
+    private var shapeMenu: some View {
+        let current = library.activeTool.isShape ? library.activeTool : lastShape
+        return HStack(spacing: 0) {
+            toolButton(current)
+            Menu {
+                ForEach(AnnotationTool.shapes) { shape in
+                    Button { pick(shape) } label: { Label(shape.title, systemImage: shape.symbol) }
+                }
+            } label: {
+                Image(systemName: "chevron.down")
+            }
+            .menuStyle(.borderlessButton)
+            .menuIndicator(.hidden)
+            .fixedSize()
+            .help(L("Shapes"))
+            .accessibilityLabel(L("Shapes"))
+        }
+    }
+
+    @ViewBuilder
+    private var colorMenu: some View {
+        let tool = library.activeTool
+        if tool != .select && tool != .note {
+            let current = library.color(for: tool)
+            Menu {
+                ForEach(tool.colorChoices) { color in
+                    Button { library.setColor(color, for: tool) } label: {
+                        Label { Text(color.title) } icon: { Image(nsImage: swatchImage(color.nsColor)) }
+                    }
+                }
+            } label: {
+                HStack(spacing: 5) {
+                    Image(nsImage: swatchImage(current.nsColor))
+                    Text(current.title)
+                }
+            }
+            .menuStyle(.borderlessButton)
+            .fixedSize()
+            .help(L("Color"))
+        }
+    }
+
+    private func toolLabel(symbol: String, isActive: Bool) -> some View {
+        Image(systemName: symbol)
+            .font(.system(size: 15))
+            .frame(width: 30, height: 26)
+            .background(isActive ? Color.accentColor.opacity(0.15) : .clear, in: RoundedRectangle(cornerRadius: 6))
+            .foregroundStyle(isActive ? Color.accentColor : .primary)
+            .contentShape(Rectangle())
+    }
+
+    private func toggle(_ tool: AnnotationTool) {
+        library.activeTool = library.activeTool == tool ? .select : tool
+    }
+
+    private func pick(_ shape: AnnotationTool) {
+        lastShape = shape
+        library.activeTool = shape
+    }
+
+    /// A filled circle that menus show in color rather than as a template.
+    private func swatchImage(_ color: NSColor) -> NSImage {
+        let image = NSImage(size: NSSize(width: 12, height: 12), flipped: false) { rect in
+            color.setFill()
+            NSBezierPath(ovalIn: rect.insetBy(dx: 0.5, dy: 0.5)).fill()
+            NSColor.black.withAlphaComponent(0.2).setStroke()
+            NSBezierPath(ovalIn: rect.insetBy(dx: 0.5, dy: 0.5)).stroke()
+            return true
+        }
+        image.isTemplate = false
+        return image
     }
 }

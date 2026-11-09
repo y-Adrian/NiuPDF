@@ -20,6 +20,8 @@
 		100000000000000000000024 /* Localization.swift in Sources */ = {isa = PBXBuildFile; fileRef = 200000000000000000000024 /* Localization.swift */; };
 		100000000000000000000031 /* Localizable.strings in Resources */ = {isa = PBXBuildFile; fileRef = 300000000000000000000031 /* Localizable.strings */; };
 		100000000000000000000032 /* Localizable.strings in Resources */ = {isa = PBXBuildFile; fileRef = 300000000000000000000032 /* Localizable.strings */; };
+		100000000000000000000025 /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 200000000000000000000025 /* SettingsView.swift */; };
+		100000000000000000000026 /* AnnotationTools.swift in Sources */ = {isa = PBXBuildFile; fileRef = 200000000000000000000026 /* AnnotationTools.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -49,6 +51,8 @@
 		200000000000000000000032 /* zh-Hans */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = "zh-Hans"; path = "Sources/Paperplane/Resources/zh-Hans.lproj/Localizable.strings"; sourceTree = SOURCE_ROOT; };
 		200000000000000000000033 /* en */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = en; path = Sources/PaperplaneCore/Resources/en.lproj/Localizable.strings; sourceTree = SOURCE_ROOT; };
 		200000000000000000000034 /* zh-Hans */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = "zh-Hans"; path = "Sources/PaperplaneCore/Resources/zh-Hans.lproj/Localizable.strings"; sourceTree = SOURCE_ROOT; };
+		200000000000000000000025 /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Sources/Paperplane/SettingsView.swift; sourceTree = SOURCE_ROOT; };
+		200000000000000000000026 /* AnnotationTools.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Sources/Paperplane/AnnotationTools.swift; sourceTree = SOURCE_ROOT; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -58,7 +62,7 @@
 
 /* Begin PBXGroup section */
 		800000000000000000000001 = {isa = PBXGroup; children = (800000000000000000000002 /* Sources */, 800000000000000000000003 /* Configuration */, 800000000000000000000004 /* Frameworks */, 800000000000000000000005 /* Products */, ); sourceTree = "<group>"; };
-		800000000000000000000002 /* Sources */ = {isa = PBXGroup; children = (200000000000000000000001 /* PaperplaneApp.swift */, 200000000000000000000002 /* ReaderLibrary.swift */, 200000000000000000000003 /* ReaderWindow.swift */, 200000000000000000000004 /* PDFCanvas.swift */, 200000000000000000000022 /* AnnotationOverlay.swift */, 200000000000000000000021 /* MarkupEngine.swift */, 200000000000000000000005 /* SafePDFFileStore.swift */, 200000000000000000000023 /* Localization.swift */, 200000000000000000000024 /* Localization.swift */, 300000000000000000000031 /* Localizable.strings */, 300000000000000000000032 /* Localizable.strings */, ); name = Sources; sourceTree = "<group>"; };
+		800000000000000000000002 /* Sources */ = {isa = PBXGroup; children = (200000000000000000000001 /* PaperplaneApp.swift */, 200000000000000000000002 /* ReaderLibrary.swift */, 200000000000000000000003 /* ReaderWindow.swift */, 200000000000000000000004 /* PDFCanvas.swift */, 200000000000000000000026 /* AnnotationTools.swift */, 200000000000000000000025 /* SettingsView.swift */, 200000000000000000000022 /* AnnotationOverlay.swift */, 200000000000000000000021 /* MarkupEngine.swift */, 200000000000000000000005 /* SafePDFFileStore.swift */, 200000000000000000000023 /* Localization.swift */, 200000000000000000000024 /* Localization.swift */, 300000000000000000000031 /* Localizable.strings */, 300000000000000000000032 /* Localizable.strings */, ); name = Sources; sourceTree = "<group>"; };
 		800000000000000000000003 /* Configuration */ = {isa = PBXGroup; children = (200000000000000000000006 /* Paperplane.entitlements */, 200000000000000000000007 /* Info.plist */, ); name = Configuration; sourceTree = "<group>"; };
 		800000000000000000000004 /* Frameworks */ = {isa = PBXGroup; children = (200000000000000000000011 /* PDFKit.framework */, ); name = Frameworks; sourceTree = "<group>"; };
 		800000000000000000000005 /* Products */ = {isa = PBXGroup; children = (200000000000000000000008 /* Paperplane.app */, 200000000000000000000009 /* PaperplaneCore.framework */, ); name = Products; sourceTree = "<group>"; };
@@ -84,7 +88,7 @@
 /* End PBXVariantGroup section */
 
 /* Begin PBXSourcesBuildPhase section */
-		a00000000000000000000001 /* Paperplane Sources */ = {isa = PBXSourcesBuildPhase; buildActionMask = 2147483647; files = (100000000000000000000001 /* PaperplaneApp.swift in Sources */, 100000000000000000000002 /* ReaderLibrary.swift in Sources */, 100000000000000000000003 /* ReaderWindow.swift in Sources */, 100000000000000000000004 /* PDFCanvas.swift in Sources */, 100000000000000000000023 /* Localization.swift in Sources */, 100000000000000000000022 /* AnnotationOverlay.swift in Sources */, 100000000000000000000021 /* MarkupEngine.swift in Sources */, ); runOnlyForDeploymentPostprocessing = 0; };
+		a00000000000000000000001 /* Paperplane Sources */ = {isa = PBXSourcesBuildPhase; buildActionMask = 2147483647; files = (100000000000000000000001 /* PaperplaneApp.swift in Sources */, 100000000000000000000002 /* ReaderLibrary.swift in Sources */, 100000000000000000000003 /* ReaderWindow.swift in Sources */, 100000000000000000000004 /* PDFCanvas.swift in Sources */, 100000000000000000000026 /* AnnotationTools.swift in Sources */, 100000000000000000000025 /* SettingsView.swift in Sources */, 100000000000000000000023 /* Localization.swift in Sources */, 100000000000000000000022 /* AnnotationOverlay.swift in Sources */, 100000000000000000000021 /* MarkupEngine.swift in Sources */, ); runOnlyForDeploymentPostprocessing = 0; };
 		a00000000000000000000002 /* Core Sources */ = {isa = PBXSourcesBuildPhase; buildActionMask = 2147483647; files = (100000000000000000000005 /* SafePDFFileStore.swift in Sources */, 100000000000000000000024 /* Localization.swift in Sources */, ); runOnlyForDeploymentPostprocessing = 0; };
 /* End PBXSourcesBuildPhase section */
 

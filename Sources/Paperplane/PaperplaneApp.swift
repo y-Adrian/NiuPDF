@@ -4,10 +4,13 @@ import SwiftUI
 /// Asks about unsaved annotations before the app quits.
 final class PaperplaneAppDelegate: NSObject, NSApplicationDelegate {
     weak var library: ReaderLibrary?
+    /// Set when unsaved changes were already settled, as by "Restart Now".
+    var skipsUnsavedChangesPrompt = false
 
     @MainActor
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
-        library?.confirmDiscardingUnsavedChanges() == false ? .terminateCancel : .terminateNow
+        if skipsUnsavedChangesPrompt { return .terminateNow }
+        return library?.confirmDiscardingUnsavedChanges() == false ? .terminateCancel : .terminateNow
     }
 }
 
@@ -54,6 +57,11 @@ struct PaperplaneApp: App {
                 Button(L("Fit Page")) { library.fitPage() }
                     .disabled(library.document == nil)
             }
+        }
+
+        // Adds "Settings…" with ⌘, to the app menu.
+        Settings {
+            SettingsView()
         }
     }
 }

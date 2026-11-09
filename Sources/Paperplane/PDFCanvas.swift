@@ -31,6 +31,8 @@ struct PDFCanvas: NSViewRepresentable {
             // Let the context menu finish dismissing before the popover appears.
             DispatchQueue.main.async { view?.editAnnotation(annotation) }
         }
+        library.onToolChange = { [weak view] in view?.toolDidChange() }
+        library.commitPendingEdits = { [weak view] in view?.toolHandler.endTextEditing() }
         view.window?.isDocumentEdited = library.hasUnsavedChanges
         if let page = document.page(at: library.currentPageIndex) { view.go(to: page) }
         library.applyPendingRestoredZoom(to: view)
@@ -209,22 +211,67 @@ private final class MarkupPDFView: PDFView, AnnotationOverlayHost {
     private var contextMenuSelection: PDFSelection?
     private var editorPopover: NSPopover?
     private var pendingMarkupClick: PDFAnnotation?
+    /// Set while a markup tool waits for the text selection a drag produces.
+    private var awaitsToolSelection = false
+    private(set) lazy var toolHandler = AnnotationToolHandler(view: self, library: readerLibrary, overlayProvider: overlayProvider)
 
     func refreshAnnotationOverlays() {
         overlayProvider.refreshAll()
     }
 
-    /// A plain click on markup opens its editor, as in PDF Expert; dragging over
-    /// it still selects text. PDFView may track the drag inside `mouseDown`, so
-    /// the click is resolved after it returns or in `mouseUp`, whichever comes.
+    func toolDidChange() {
+        toolHandler.toolDidChange()
+        clearSelection()
+        window?.invalidateCursorRects(for: self)
+    }
+
+    /// Tools that place or draw annotations take the mouse first. Otherwise a
+    /// plain click on markup opens its editor, as in PDF Expert, and dragging
+    /// selects text, which an active markup tool then marks. PDFView may track
+    /// the drag inside `mouseDown`, so the click is resolved after it returns
+    /// or in `mouseUp`, whichever comes.
     override func mouseDown(with event: NSEvent) {
-        pendingMarkupClick = event.clickCount == 1 ? markup(at: event) : nil
+        if toolHandler.mouseDown(event) { return }
+        let tool = readerLibrary?.activeTool ?? .select
+        pendingMarkupClick = tool == .select && event.clickCount == 1 ? markup(at: event) : nil
+        awaitsToolSelection = tool.marksText
         super.mouseDown(with: event)
-        if NSEvent.pressedMouseButtons & 1 == 0 { resolvePendingMarkupClick() }
+        if NSEvent.pressedMouseButtons & 1 == 0 { resolveClick() }
+    }
+
+    override func mouseDragged(with event: NSEvent) {
+        if toolHandler.mouseDragged(event) { return }
+        super.mouseDragged(with: event)
     }
 
     override func mouseUp(with event: NSEvent) {
+        if toolHandler.mouseUp(event) { return }
         super.mouseUp(with: event)
+        resolveClick()
+    }
+
+    override func mouseMoved(with event: NSEvent) {
+        super.mouseMoved(with: event)
+        toolHandler.cursor?.set()
+    }
+
+    /// Esc leaves the active tool for plain selection.
+    override func keyDown(with event: NSEvent) {
+        if event.keyCode == 53, let readerLibrary, readerLibrary.activeTool != .select {
+            readerLibrary.activeTool = .select
+            return
+        }
+        super.keyDown(with: event)
+    }
+
+    private func resolveClick() {
+        if awaitsToolSelection {
+            awaitsToolSelection = false
+            if let selection = currentSelection,
+               !(selection.string ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                readerLibrary?.applyActiveTool(to: selection)
+            }
+        }
         resolvePendingMarkupClick()
     }
 

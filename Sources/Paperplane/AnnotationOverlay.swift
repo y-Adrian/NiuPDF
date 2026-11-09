@@ -169,11 +169,20 @@ final class AnnotationOverlayProvider: NSObject, PDFPageOverlayViewProvider {
     func refreshAll() {
         for overlay in overlays.allObjects { overlay.refresh() }
     }
+
+    @MainActor
+    func overlay(for page: PDFPage) -> PageAnnotationOverlay? {
+        overlays.allObjects.first { $0.page === page }
+    }
 }
 
 @MainActor
 final class PageAnnotationOverlay: NSView {
-    private let page: PDFPage
+    let page: PDFPage
+    /// Live outline of the drawing or shape being dragged.
+    var toolPreview: ToolPreview? {
+        didSet { needsDisplay = true }
+    }
     private weak var library: ReaderLibrary?
     private weak var hovered: PDFAnnotation?
 
@@ -218,6 +227,7 @@ final class PageAnnotationOverlay: NSView {
     }
 
     override func draw(_ dirtyRect: NSRect) {
+        drawToolPreview()
         let markers = markers
         if let hovered, let marker = markers.first(where: { $0.annotation === hovered }) {
             NSColor.controlAccentColor.withAlphaComponent(0.2).setFill()
@@ -235,9 +245,43 @@ final class PageAnnotationOverlay: NSView {
         }
     }
 
-    /// Only the icons take clicks; everywhere else text selection goes to the PDF view.
+    private func drawToolPreview() {
+        guard let toolPreview, let library else { return }
+        let path = NSBezierPath()
+        path.lineWidth = ReaderLibrary.strokeWidth
+        path.lineCapStyle = .round
+        path.lineJoinStyle = .round
+        switch toolPreview {
+        case let .ink(points):
+            guard let first = points.first else { return }
+            path.move(to: first)
+            for point in points.dropFirst() { path.line(to: point) }
+        case let .shape(tool, start, end):
+            let rect = CGRect(x: min(start.x, end.x), y: min(start.y, end.y), width: abs(end.x - start.x), height: abs(end.y - start.y))
+            switch tool {
+            case .ellipse:
+                path.appendOval(in: rect)
+            case .arrow:
+                path.move(to: start)
+                path.line(to: end)
+                let angle = atan2(end.y - start.y, end.x - start.x)
+                for spread in [CGFloat.pi * 5 / 6, -CGFloat.pi * 5 / 6] {
+                    path.move(to: end)
+                    path.line(to: CGPoint(x: end.x + 10 * cos(angle + spread), y: end.y + 10 * sin(angle + spread)))
+                }
+            default:
+                path.appendRect(rect)
+            }
+        }
+        library.drawingColor.nsColor.setStroke()
+        path.stroke()
+    }
+
+    /// Only the icons and an inline text box editor take clicks; everywhere else
+    /// text selection goes to the PDF view.
     override func hitTest(_ point: NSPoint) -> NSView? {
         guard let superview else { return nil }
+        if let hit = super.hitTest(point), hit !== self { return hit }
         return marker(at: convert(point, from: superview)) != nil ? self : nil
     }
 
@@ -372,18 +416,25 @@ final class AnnotationEditorController: NSViewController, NSPopoverDelegate {
     required init?(coder: NSCoder) { nil }
 
     private var isMarkup: Bool { MarkupEngine.isMarkup(annotation) }
+    /// Markup and standalone notes carry a note; text boxes, drawings and
+    /// shapes only get colors and delete here.
+    private var showsNoteField: Bool { isMarkup || annotation.type == "Text" }
+    private var palette: [MarkupColor] {
+        if isMarkup { return MarkupColor.allCases }
+        return annotation.type == "Text" ? [] : MarkupColor.drawingCases
+    }
 
     /// One plain light surface for the whole popover: the color swatches sit on
     /// the same background as the note text, separated only by hairlines.
     override func loadView() {
         let width: CGFloat = 264
         var rows: [NSView] = []
-        if isMarkup {
+        if !palette.isEmpty {
             let row = NSStackView()
             row.orientation = .horizontal
             row.spacing = 6
             row.edgeInsets = NSEdgeInsets(top: 10, left: 12, bottom: 10, right: 12)
-            for (index, color) in MarkupColor.allCases.enumerated() {
+            for (index, color) in palette.enumerated() {
                 let button = NSButton(title: "", target: self, action: #selector(pickColor(_:)))
                 button.isBordered = false
                 button.imagePosition = .imageOnly
@@ -402,7 +453,30 @@ final class AnnotationEditorController: NSViewController, NSPopoverDelegate {
             rows.append(Self.hairline())
         }
 
-        let scrollView = NSScrollView(frame: NSRect(x: 0, y: 0, width: width, height: 104))
+        if showsNoteField { rows += noteRows() }
+
+        let deleteTitle = isMarkup ? L("Delete Markup") : (annotation.type == "Text" ? L("Delete Note") : L("Delete Annotation"))
+        let deleteButton = Self.textButton(deleteTitle, color: .systemRed, target: self, action: #selector(deleteAnnotation))
+        let doneButton = Self.textButton(L("Done"), color: .controlAccentColor, target: self, action: #selector(finish))
+        // Plain Return inserts a line break in the note; ⌘Return finishes.
+        doneButton.keyEquivalent = "\r"
+        doneButton.keyEquivalentModifierMask = .command
+        doneButton.toolTip = L("Done (⌘↩)")
+        let buttons = NSStackView(views: [deleteButton, NSView(), doneButton])
+        buttons.orientation = .horizontal
+        buttons.edgeInsets = NSEdgeInsets(top: 8, left: 12, bottom: 8, right: 12)
+        rows.append(buttons)
+
+        let stack = NSStackView(views: rows)
+        stack.orientation = .vertical
+        stack.alignment = .leading
+        stack.spacing = 0
+        for row in rows { row.widthAnchor.constraint(equalToConstant: width).isActive = true }
+        view = stack
+    }
+
+    private func noteRows() -> [NSView] {
+        let scrollView = NSScrollView(frame: NSRect(x: 0, y: 0, width: 264, height: 104))
         scrollView.hasVerticalScroller = true
         scrollView.autohidesScrollers = true
         scrollView.borderType = .noBorder
@@ -422,31 +496,7 @@ final class AnnotationEditorController: NSViewController, NSPopoverDelegate {
         textView.setAccessibilityLabel(L("Note"))
         scrollView.documentView = textView
         scrollView.heightAnchor.constraint(equalToConstant: 104).isActive = true
-        rows.append(scrollView)
-        rows.append(Self.hairline())
-
-        let deleteButton = Self.textButton(
-            isMarkup ? L("Delete Markup") : L("Delete Note"),
-            color: .systemRed,
-            target: self,
-            action: #selector(deleteAnnotation)
-        )
-        let doneButton = Self.textButton(L("Done"), color: .controlAccentColor, target: self, action: #selector(finish))
-        // Plain Return inserts a line break in the note; ⌘Return finishes.
-        doneButton.keyEquivalent = "\r"
-        doneButton.keyEquivalentModifierMask = .command
-        doneButton.toolTip = L("Done (⌘↩)")
-        let buttons = NSStackView(views: [deleteButton, NSView(), doneButton])
-        buttons.orientation = .horizontal
-        buttons.edgeInsets = NSEdgeInsets(top: 8, left: 12, bottom: 8, right: 12)
-        rows.append(buttons)
-
-        let stack = NSStackView(views: rows)
-        stack.orientation = .vertical
-        stack.alignment = .leading
-        stack.spacing = 0
-        for row in rows { row.widthAnchor.constraint(equalToConstant: width).isActive = true }
-        view = stack
+        return [scrollView, Self.hairline()]
     }
 
     override func viewWillAppear() {
@@ -462,7 +512,7 @@ final class AnnotationEditorController: NSViewController, NSPopoverDelegate {
 
     override func viewDidAppear() {
         super.viewDidAppear()
-        view.window?.makeFirstResponder(textView)
+        if showsNoteField { view.window?.makeFirstResponder(textView) }
     }
 
     private static func hairline() -> NSView {
@@ -482,9 +532,9 @@ final class AnnotationEditorController: NSViewController, NSPopoverDelegate {
     }
 
     private func updateSwatches() {
-        let current = annotation.color.usingColorSpace(.deviceRGB)
+        let current = (library?.displayColor(of: annotation) ?? annotation.color).usingColorSpace(.deviceRGB)
         for (index, button) in swatches.enumerated() {
-            let candidate = MarkupColor.allCases[index].nsColor.usingColorSpace(.deviceRGB)
+            let candidate = palette[index].nsColor.usingColorSpace(.deviceRGB)
             let isCurrent = current.map { current in
                 candidate.map {
                     abs($0.redComponent - current.redComponent) < 0.02
@@ -501,8 +551,8 @@ final class AnnotationEditorController: NSViewController, NSPopoverDelegate {
     }
 
     @objc private func pickColor(_ sender: NSButton) {
-        guard MarkupColor.allCases.indices.contains(sender.tag) else { return }
-        library?.setColor(annotation, to: MarkupColor.allCases[sender.tag])
+        guard palette.indices.contains(sender.tag) else { return }
+        library?.setColor(annotation, to: palette[sender.tag])
         updateSwatches()
     }
 
@@ -515,7 +565,7 @@ final class AnnotationEditorController: NSViewController, NSPopoverDelegate {
     }
 
     func popoverWillClose(_ notification: Notification) {
-        guard !isDeleted else { return }
+        guard !isDeleted, showsNoteField else { return }
         library?.finishEditing(annotation, note: textView.string)
     }
 }

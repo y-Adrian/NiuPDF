@@ -78,7 +78,64 @@ struct MarkupColor: Identifiable, Hashable {
     static let cyan = MarkupColor(hex: "32ADE6", title: L("Cyan"))
     static let blue = MarkupColor(hex: "007AFF", title: L("Blue"))
     static let purple = MarkupColor(hex: "AF52DE", title: L("Purple"))
+    static let black = MarkupColor(hex: "1C1C1E", title: L("Black"))
     static let allCases = [yellow, orange, red, green, cyan, blue, purple]
+    /// Colors for text boxes, drawings and shapes; black is no use as a highlight.
+    static let drawingCases = [black, red, orange, yellow, green, cyan, blue, purple]
+}
+
+/// The annotation tools in the toolbar. A tool stays active for repeated use,
+/// as in PDF Expert, until another tool is chosen or Esc returns to `select`.
+enum AnnotationTool: String, CaseIterable, Identifiable {
+    case select
+    case highlight
+    case underline
+    case strikeOut
+    case textBox
+    case note
+    case ink
+    case rectangle
+    case ellipse
+    case arrow
+
+    var id: String { rawValue }
+
+    static let shapes: [AnnotationTool] = [.rectangle, .ellipse, .arrow]
+
+    var title: String {
+        switch self {
+        case .select: L("Select")
+        case .highlight: L("Highlight")
+        case .underline: L("Underline")
+        case .strikeOut: L("Strikethrough")
+        case .textBox: L("Text Box")
+        case .note: L("Note")
+        case .ink: L("Draw")
+        case .rectangle: L("Rectangle")
+        case .ellipse: L("Ellipse")
+        case .arrow: L("Arrow")
+        }
+    }
+
+    var symbol: String {
+        switch self {
+        case .select: "cursorarrow"
+        case .highlight: "highlighter"
+        case .underline: "underline"
+        case .strikeOut: "strikethrough"
+        case .textBox: "character.textbox"
+        case .note: "text.bubble"
+        case .ink: "scribble"
+        case .rectangle: "rectangle"
+        case .ellipse: "circle"
+        case .arrow: "arrow.up.right"
+        }
+    }
+
+    /// Tools applied to text selected by dragging.
+    var marksText: Bool { self == .highlight || self == .underline || self == .strikeOut }
+    var isShape: Bool { Self.shapes.contains(self) }
+    var colorChoices: [MarkupColor] { marksText ? MarkupColor.allCases : MarkupColor.drawingCases }
 }
 
 @MainActor
@@ -97,6 +154,20 @@ final class ReaderLibrary: ObservableObject {
     @Published var selectedHighlightColor: MarkupColor = .yellow
     @Published var selectedUnderlineColor: MarkupColor = .yellow
     @Published var selectedStrikeOutColor: MarkupColor = .yellow
+    /// Color for text boxes, drawings and shapes.
+    @Published var drawingColor: MarkupColor = .red
+    @Published var activeTool: AnnotationTool = .select {
+        didSet { if activeTool != oldValue { onToolChange?() } }
+    }
+    /// Whether the annotation tool row under the toolbar is expanded. Collapsing
+    /// it returns to plain selection.
+    @Published var isAnnotationBarVisible = false {
+        didSet { if !isAnnotationBarVisible { activeTool = .select } }
+    }
+    /// Set by the PDF view: ends drags and inline text editing on a tool change.
+    var onToolChange: (() -> Void)?
+    /// Set by the PDF view: commits a text box still being typed into.
+    var commitPendingEdits: (() -> Void)?
     @Published var focusSearch = false
     @Published var isSidebarVisible = true
     @Published var sidebarMode: SidebarMode = .thumbnails
@@ -248,6 +319,7 @@ final class ReaderLibrary: ObservableObject {
 
     /// Returns true when it is fine to replace or drop the current document.
     func confirmDiscardingUnsavedChanges() -> Bool {
+        commitPendingEdits?()
         guard hasUnsavedChanges, document != nil else { return true }
         let alert = NSAlert()
         alert.messageText = L("Do you want to save the changes made to “%@”?", displayName)
@@ -564,9 +636,10 @@ final class ReaderLibrary: ObservableObject {
     /// Set by the PDF view; opens the annotation editor popover.
     var onEditAnnotation: ((PDFAnnotation) -> Void)?
 
-    /// A highlight created by "Add Note" whose note has not been written yet.
-    /// It is kept, as one undo step, only if the note ends up with text.
-    private var pendingNoteCreation: (annotation: PDFAnnotation, edit: AnnotationEdit)?
+    /// An annotation that only counts once it gets text: the highlight made by
+    /// "Add Note", a note placed with the note tool, or a new text box. It is
+    /// kept, as one undo step, only if its text ends up non-empty.
+    private var pendingCreation: (annotation: PDFAnnotation, edit: AnnotationEdit)?
 
     /// Markup under the selection that already carries a note.
     func notedMarkup(in selection: PDFSelection) -> PDFAnnotation? {
@@ -591,7 +664,7 @@ final class ReaderLibrary: ObservableObject {
             edit.revert()
             return
         }
-        pendingNoteCreation = (created, edit)
+        pendingCreation = (created, edit)
         annotationRevision += 1
         refreshPDFView()
         onEditAnnotation?(created)
@@ -607,8 +680,8 @@ final class ReaderLibrary: ObservableObject {
     /// "Add Note" highlight is dropped and an empty standalone note is deleted.
     func finishEditing(_ annotation: PDFAnnotation, note: String) {
         let text = note.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "" : note
-        if let pending = pendingNoteCreation, pending.annotation === annotation {
-            pendingNoteCreation = nil
+        if let pending = pendingCreation, pending.annotation === annotation {
+            pendingCreation = nil
             if text.isEmpty {
                 pending.edit.revert()
                 annotationRevision += 1
@@ -642,9 +715,10 @@ final class ReaderLibrary: ObservableObject {
         case "Highlight": selectedHighlightColor = color
         case "Underline": selectedUnderlineColor = color
         case "StrikeOut": selectedStrikeOutColor = color
+        case "FreeText", "Ink", "Square", "Circle", "Line": drawingColor = color
         default: break
         }
-        if pendingNoteCreation?.annotation === annotation {
+        if pendingCreation?.annotation === annotation {
             // Part of the not-yet-committed "Add Note" step.
             annotation.color = color.nsColor
             annotationRevision += 1
@@ -655,9 +729,13 @@ final class ReaderLibrary: ObservableObject {
     }
 
     private func setColor(_ annotation: PDFAnnotation, to color: NSColor) {
-        let previous = annotation.color
+        let previous = displayColor(of: annotation)
         guard !colorsMatch(previous, color) else { return }
-        annotation.color = color
+        if annotation.type == "FreeText" {
+            annotation.fontColor = color
+        } else {
+            annotation.color = color
+        }
         pdfView?.undoManager?.registerUndo(withTarget: self) { target in
             target.setColor(annotation, to: previous)
         }
@@ -666,8 +744,8 @@ final class ReaderLibrary: ObservableObject {
     }
 
     func deleteAnnotation(_ annotation: PDFAnnotation) {
-        if let pending = pendingNoteCreation, pending.annotation === annotation {
-            pendingNoteCreation = nil
+        if let pending = pendingCreation, pending.annotation === annotation {
+            pendingCreation = nil
             pending.edit.revert()
             annotationRevision += 1
             refreshPDFView()
@@ -677,6 +755,194 @@ final class ReaderLibrary: ObservableObject {
         recordAnnotationEdit(annotation.type == "Text" ? L("Delete Note") : L("Delete Annotation"), pages: [page]) {
             page.removeAnnotation(annotation)
         }
+    }
+
+    // MARK: - Tools
+
+    func color(for tool: AnnotationTool) -> MarkupColor {
+        switch tool {
+        case .highlight: selectedHighlightColor
+        case .underline: selectedUnderlineColor
+        case .strikeOut: selectedStrikeOutColor
+        default: drawingColor
+        }
+    }
+
+    func setColor(_ color: MarkupColor, for tool: AnnotationTool) {
+        switch tool {
+        case .highlight: selectedHighlightColor = color
+        case .underline: selectedUnderlineColor = color
+        case .strikeOut: selectedStrikeOutColor = color
+        default: drawingColor = color
+        }
+    }
+
+    /// Marks text selected while a markup tool is active.
+    func applyActiveTool(to selection: PDFSelection) {
+        switch activeTool {
+        case .highlight: applyHighlight(color: selectedHighlightColor, to: selection)
+        case .underline: applyUnderline(color: selectedUnderlineColor, to: selection)
+        case .strikeOut: applyStrikeOut(color: selectedStrikeOutColor, to: selection)
+        default: break
+        }
+    }
+
+    /// Places a standalone note centered on a page point and opens its editor.
+    func addStandaloneNote(at point: CGPoint, on page: PDFPage) {
+        let side: CGFloat = 24
+        let note = PDFAnnotation(
+            bounds: CGRect(x: point.x - side / 2, y: point.y - side / 2, width: side, height: side),
+            forType: .text,
+            withProperties: nil
+        )
+        note.iconType = .comment
+        note.color = MarkupColor.yellow.nsColor
+        note.contents = ""
+        let edit = captureAnnotationEdit(pages: [page]) { page.addAnnotation(note) }
+        // The overlay draws the icon; see `prepareNotes(on:)`.
+        note.shouldDisplay = false
+        hiddenNativeNotes[ObjectIdentifier(note)] = note
+        pendingCreation = (note, edit)
+        annotationRevision += 1
+        refreshPDFView()
+        onEditAnnotation?(note)
+    }
+
+    static let textBoxFontSize: CGFloat = 14
+    static let textBoxWidth: CGFloat = 180
+
+    /// Adds an empty text box whose top-left corner is at a page point. It is
+    /// kept only if `finishTextBox` gives it text.
+    func beginTextBox(at point: CGPoint, on page: PDFPage) -> PDFAnnotation {
+        let font = NSFont.systemFont(ofSize: Self.textBoxFontSize)
+        let height = ceil(font.ascender - font.descender + font.leading) + 6
+        let box = PDFAnnotation(
+            bounds: CGRect(x: point.x, y: point.y - height, width: Self.textBoxWidth, height: height),
+            forType: .freeText,
+            withProperties: nil
+        )
+        box.font = font
+        box.fontColor = drawingColor.nsColor
+        box.color = .clear
+        box.alignment = .left
+        let border = PDFBorder()
+        border.lineWidth = 0
+        box.border = border
+        box.contents = ""
+        let edit = captureAnnotationEdit(pages: [page]) { page.addAnnotation(box) }
+        pendingCreation = (box, edit)
+        return box
+    }
+
+    /// Ends inline editing of a text box: commits a new box with text as one
+    /// undo step, drops an empty new box, and deletes an emptied existing one.
+    func finishTextBox(_ box: PDFAnnotation, text: String, bounds: CGRect) {
+        let isEmpty = text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        if let pending = pendingCreation, pending.annotation === box {
+            pendingCreation = nil
+            if isEmpty {
+                pending.edit.revert()
+                annotationRevision += 1
+                refreshPDFView()
+            } else {
+                box.contents = text
+                box.bounds = bounds
+                commit(pending.edit, actionName: L("Add Text Box"))
+            }
+            return
+        }
+        if isEmpty {
+            deleteAnnotation(box)
+            return
+        }
+        setTextBox(box, text: text, bounds: bounds)
+    }
+
+    private func setTextBox(_ box: PDFAnnotation, text: String, bounds: CGRect) {
+        let previousText = box.contents ?? ""
+        let previousBounds = box.bounds
+        guard previousText != text || previousBounds != bounds else { return }
+        box.contents = text
+        box.bounds = bounds
+        pdfView?.undoManager?.registerUndo(withTarget: self) { target in
+            target.setTextBox(box, text: previousText, bounds: previousBounds)
+        }
+        pdfView?.undoManager?.setActionName(L("Edit Text Box"))
+        annotationsDidChange()
+    }
+
+    static let strokeWidth: CGFloat = 2
+
+    /// Adds a freehand drawing through page points.
+    func addInk(through points: [CGPoint], on page: PDFPage) {
+        guard points.count > 1 else { return }
+        let path = NSBezierPath()
+        path.move(to: points[0])
+        for point in points.dropFirst() { path.line(to: point) }
+        let bounds = path.bounds.insetBy(dx: -Self.strokeWidth * 2, dy: -Self.strokeWidth * 2)
+        // Ink paths are relative to the annotation's origin.
+        let local = NSBezierPath()
+        local.move(to: CGPoint(x: points[0].x - bounds.minX, y: points[0].y - bounds.minY))
+        for point in points.dropFirst() { local.line(to: CGPoint(x: point.x - bounds.minX, y: point.y - bounds.minY)) }
+        local.lineWidth = Self.strokeWidth
+        local.lineCapStyle = .round
+        local.lineJoinStyle = .round
+        let ink = PDFAnnotation(bounds: bounds, forType: .ink, withProperties: nil)
+        ink.add(local)
+        ink.border = strokeBorder()
+        ink.color = drawingColor.nsColor
+        recordAnnotationEdit(L("Draw"), pages: [page]) { page.addAnnotation(ink) }
+    }
+
+    /// Adds a rectangle, ellipse or arrow dragged from `start` to `end`.
+    func addShape(_ tool: AnnotationTool, from start: CGPoint, to end: CGPoint, on page: PDFPage) {
+        let rect = CGRect(x: min(start.x, end.x), y: min(start.y, end.y), width: abs(end.x - start.x), height: abs(end.y - start.y))
+        guard max(rect.width, rect.height) >= 4 else { return }
+        let shape: PDFAnnotation
+        switch tool {
+        case .arrow:
+            let bounds = rect.insetBy(dx: -10, dy: -10)
+            shape = PDFAnnotation(bounds: bounds, forType: .line, withProperties: nil)
+            // Line end points are relative to the annotation's origin.
+            shape.startPoint = CGPoint(x: start.x - bounds.minX, y: start.y - bounds.minY)
+            shape.endPoint = CGPoint(x: end.x - bounds.minX, y: end.y - bounds.minY)
+            shape.endLineStyle = .openArrow
+        case .ellipse:
+            shape = PDFAnnotation(bounds: rect.insetBy(dx: -1, dy: -1), forType: .circle, withProperties: nil)
+        default:
+            shape = PDFAnnotation(bounds: rect.insetBy(dx: -1, dy: -1), forType: .square, withProperties: nil)
+        }
+        shape.border = strokeBorder()
+        shape.color = drawingColor.nsColor
+        recordAnnotationEdit(L("Add Shape"), pages: [page]) { page.addAnnotation(shape) }
+    }
+
+    private func strokeBorder() -> PDFBorder {
+        let border = PDFBorder()
+        border.lineWidth = Self.strokeWidth
+        return border
+    }
+
+    /// Annotations the select tool can drag to a new place.
+    static func isMovable(_ annotation: PDFAnnotation) -> Bool {
+        ["FreeText", "Ink", "Square", "Circle", "Line"].contains(annotation.type ?? "")
+    }
+
+    /// Records a finished drag; the bounds were already updated while dragging.
+    func commitMove(_ annotation: PDFAnnotation, from previous: CGRect) {
+        let moved = annotation.bounds
+        guard moved != previous else { return }
+        pdfView?.undoManager?.registerUndo(withTarget: self) { target in
+            annotation.bounds = previous
+            target.commitMove(annotation, from: moved)
+        }
+        pdfView?.undoManager?.setActionName(L("Move Annotation"))
+        annotationsDidChange()
+    }
+
+    /// The color an annotation shows: the text color for text boxes.
+    func displayColor(of annotation: PDFAnnotation) -> NSColor {
+        annotation.type == "FreeText" ? (annotation.fontColor ?? .black) : annotation.color
     }
 
     // MARK: - Note icons
@@ -748,7 +1014,7 @@ final class ReaderLibrary: ObservableObject {
         markupNotes = [:]
         preparedNotePages = []
         markerCache = [:]
-        pendingNoteCreation = nil
+        pendingCreation = nil
     }
 
     // MARK: - Edit tracking and undo
@@ -837,7 +1103,7 @@ final class ReaderLibrary: ObservableObject {
             guard let page = document.page(at: index) else { continue }
             for annotation in page.annotations {
                 guard let type = annotation.type, let kind = Self.listedAnnotationKinds[type],
-                      pendingNoteCreation?.annotation !== annotation else { continue }
+                      pendingCreation?.annotation !== annotation else { continue }
                 var text = ""
                 var noteText = note(of: annotation)
                 if MarkupEngine.isMarkup(annotation) {
@@ -871,6 +1137,7 @@ final class ReaderLibrary: ObservableObject {
 
     @discardableResult
     func save() -> Bool {
+        commitPendingEdits?()
         guard let document, let fileURL, let fileRevision else { return false }
         do {
             self.fileRevision = try withNativeNotesRestored {
