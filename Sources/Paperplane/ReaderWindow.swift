@@ -75,7 +75,9 @@ struct ReaderWindow: View {
             }
         }
         .background(Color(nsColor: .windowBackgroundColor))
-        .onAppear { library.restoreLastDocument() }
+        // Opening publishes many properties; doing it during the appearance
+        // update is "publishing changes from within view updates".
+        .onAppear { DispatchQueue.main.async { library.restoreLastDocument() } }
         .onChange(of: library.currentPageIndex) { value in pageInput = "\(value + 1)" }
         .onDrop(of: [UTType.fileURL], isTargeted: $isDropTargeted, perform: handleDrop)
         .alert(L("Operation Failed"), isPresented: Binding(

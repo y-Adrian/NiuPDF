@@ -926,6 +926,19 @@ Checklist 创建：2026-11-10
 
 提交：待完成
 
+## 阶段 3C-2：清理 Xcode 中的错误、警告与运行时问题
+
+Checklist 创建：2026-11-10
+
+- [x] 定位 Xcode 报“Cannot find 'L' in scope”：Xcode 自 2026-11-09 21:41 起一直打开本工程，此后在 Xcode 之外加入工程的 `Localization.swift` 等文件未被它重新载入；磁盘上的工程文件完整，命令行 Debug/Release 与 Swift 包均可构建。处理方式：关闭并重新打开工程、清理构建文件夹：创建 2026-11-10；完成 2026-11-10。
+- [x] 修复 SwiftUI 紫色运行时问题“Publishing changes from within view updates is not allowed”（每次启动 4 次）：`PDFCanvas` 在创建/更新视图时恢复缩放会发布 `zoomScale`，窗口 `onAppear` 中恢复上次文稿会发布多项属性；两处都延后到下一轮主循环。以系统日志计数确认降为 0，并验证启动时仍能恢复上次文稿与 250% 缩放：创建 2026-11-10；完成 2026-11-10。
+- [x] 以 Main Thread Checker 运行全部工具与导出流程，无报告；其余日志（AppIntents、linkd、sqlite、CoreGraphics“文档已释放”）来自未签名探针环境或探针提前释放文档，不属于应用：创建 2026-11-10；完成 2026-11-10。
+- [x] 清除构建警告：工程级设置 `ALWAYS_SEARCH_USER_PATHS = NO`（消除“传统 headermap”警告），`LM_SKIP_METADATA_EXTRACTION = YES`（应用不使用 App Intents，跳过元数据提取，消除“Metadata extraction skipped”警告）。Debug 与 Release 干净构建均为 0 警告 0 错误；`LastUpgradeCheck` 与 Xcode 27.1 一致：创建 2026-11-10；完成 2026-11-10。
+- [x] 7 项核心测试通过：创建 2026-11-10；完成 2026-11-10。
+- [ ] 在 Xcode 中重新打开工程后运行，确认问题导航器与控制台均无本应用的警告：创建 2026-11-10。
+
+提交：待完成
+
 ## 事故与风险记录
 
 | 日期 | 发现 | 影响 | 处理 / 决策 |

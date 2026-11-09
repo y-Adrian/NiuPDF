@@ -35,7 +35,7 @@ struct PDFCanvas: NSViewRepresentable {
         library.commitPendingEdits = { [weak view] in view?.toolHandler.endTextEditing() }
         view.window?.isDocumentEdited = library.hasUnsavedChanges
         if let page = document.page(at: library.currentPageIndex) { view.go(to: page) }
-        library.applyPendingRestoredZoom(to: view)
+        restorePendingZoom(on: view)
 
         NotificationCenter.default.addObserver(
             context.coordinator,
@@ -57,9 +57,15 @@ struct PDFCanvas: NSViewRepresentable {
         if view.document !== document {
             view.document = document
             if let page = document.page(at: library.currentPageIndex) { view.go(to: page) }
-            library.applyPendingRestoredZoom(to: view)
+            restorePendingZoom(on: view)
         }
         if library.pdfView !== view { library.pdfView = view }
+    }
+
+    /// Applying the zoom publishes `zoomScale`, which SwiftUI does not allow
+    /// while it is creating or updating this view, so it waits one turn.
+    private func restorePendingZoom(on view: PDFView) {
+        DispatchQueue.main.async { [library] in library.applyPendingRestoredZoom(to: view) }
     }
 
     func makeCoordinator() -> Coordinator { Coordinator(library: library) }
