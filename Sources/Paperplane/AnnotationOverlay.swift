@@ -95,8 +95,21 @@ enum CommentMarkerLayout {
 /// has text; an empty standalone note is drawn hollow.
 enum CommentIcon {
     static let screenSize: CGFloat = 16
+    /// Resting opacity, so text under an icon stays readable; hovering shows it fully.
+    static let restingOpacity: CGFloat = 0.45
 
-    static func draw(in rect: CGRect, color: NSColor, hasText: Bool) {
+    static func draw(in rect: CGRect, color: NSColor, hasText: Bool, opacity: CGFloat = 1) {
+        // Fade the icon as a whole; per-part alpha would let the lines and
+        // outline show through the fill.
+        let context = NSGraphicsContext.current?.cgContext
+        context?.saveGState()
+        context?.setAlpha(opacity)
+        context?.beginTransparencyLayer(auxiliaryInfo: nil)
+        defer {
+            context?.endTransparencyLayer()
+            context?.restoreGState()
+        }
+
         let unit = rect.width / 16
         func point(_ x: CGFloat, _ y: CGFloat) -> CGPoint { CGPoint(x: rect.minX + x * unit, y: rect.minY + y * unit) }
 
@@ -216,7 +229,8 @@ final class PageAnnotationOverlay: NSView {
             CommentIcon.draw(
                 in: iconRect(marker),
                 color: isStandalone ? MarkupColor.yellow.nsColor : marker.annotation.color,
-                hasText: hasText
+                hasText: hasText,
+                opacity: marker.annotation === hovered ? 1 : CommentIcon.restingOpacity
             )
         }
     }
