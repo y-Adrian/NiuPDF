@@ -31,15 +31,15 @@ public enum SafePDFFileStoreError: LocalizedError, Equatable {
     public var errorDescription: String? {
         switch self {
         case .unreadablePDF:
-            return "无法读取 PDF 文件。"
+            return L("The PDF file can’t be read.")
         case .externallyChanged:
-            return "文件在打开后已被其他程序修改。为保护对方的修改，本次没有覆盖文件。请重新打开文件后再编辑。"
+            return L("The file was changed by another app after it was opened. To protect those changes, it was not overwritten. Reopen the file before editing it again.")
         case .unableToWriteTemporary:
-            return "无法写入临时 PDF。原文件未更改。"
+            return L("Couldn’t write a temporary PDF. The original file is unchanged.")
         case .invalidTemporaryCopy:
-            return "临时 PDF 校验失败。原文件未更改。"
+            return L("The temporary PDF failed verification. The original file is unchanged.")
         case let .coordinationFailed(message):
-            return "无法安全协调文件访问：\(message)"
+            return L("Couldn’t safely coordinate file access: %@", message)
         }
     }
 }

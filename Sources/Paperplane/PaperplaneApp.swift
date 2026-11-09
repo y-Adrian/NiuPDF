@@ -26,32 +26,32 @@ struct PaperplaneApp: App {
         .windowStyle(.titleBar)
         .commands {
             CommandGroup(replacing: .newItem) {
-                Button("打开 PDF…") { library.presentOpenPanel() }
+                Button(L("Open PDF…")) { library.presentOpenPanel() }
                     .keyboardShortcut("o", modifiers: .command)
             }
             CommandGroup(replacing: .saveItem) {
-                Button("存储") { library.save() }
+                Button(L("Save")) { library.save() }
                     .keyboardShortcut("s", modifiers: .command)
                     .disabled(library.document == nil)
             }
             CommandGroup(after: .textEditing) {
-                Button("查找…") { library.focusSearch.toggle() }
+                Button(L("Find…")) { library.focusSearch.toggle() }
                     .keyboardShortcut("f", modifiers: .command)
                     .disabled(library.document == nil)
             }
-            CommandMenu("页面布局") {
-                Button("连续滚动") { library.layoutMode = .continuous }
+            CommandMenu(L("Page Layout")) {
+                Button(ReaderLayout.continuous.title) { library.layoutMode = .continuous }
                     .keyboardShortcut("1", modifiers: [.command, .option])
-                Button("单页") { library.layoutMode = .singlePage }
+                Button(ReaderLayout.singlePage.title) { library.layoutMode = .singlePage }
                     .keyboardShortcut("2", modifiers: [.command, .option])
-                Button("双页连续") { library.layoutMode = .twoPage }
+                Button(ReaderLayout.twoPage.title) { library.layoutMode = .twoPage }
                     .keyboardShortcut("3", modifiers: [.command, .option])
-                Button("封面 + 双页") { library.layoutMode = .twoPageBook }
+                Button(ReaderLayout.twoPageBook.title) { library.layoutMode = .twoPageBook }
                     .keyboardShortcut("4", modifiers: [.command, .option])
                 Divider()
-                Button("适合宽度") { library.fitWidth() }
+                Button(L("Fit Width")) { library.fitWidth() }
                     .disabled(library.document == nil)
-                Button("适合页面") { library.fitPage() }
+                Button(L("Fit Page")) { library.fitPage() }
                     .disabled(library.document == nil)
             }
         }

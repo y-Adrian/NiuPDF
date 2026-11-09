@@ -252,6 +252,8 @@ private final class MarkupPDFView: PDFView, AnnotationOverlayHost {
         let controller = AnnotationEditorController(annotation: annotation, library: readerLibrary)
         let popover = NSPopover()
         popover.behavior = .transient
+        // The editor is always a light card, also in dark mode.
+        popover.appearance = NSAppearance(named: .aqua)
         popover.contentViewController = controller
         popover.delegate = controller
         controller.popover = popover
@@ -272,18 +274,17 @@ private final class MarkupPDFView: PDFView, AnnotationOverlayHost {
         contextMenuSelection = selection
         setCurrentSelection(selection, animate: false)
         let menu = super.menu(for: event) ?? NSMenu()
-        removeLegacyMarkupItems(from: menu)
-        removeNativeNoteItems(from: menu)
+        removeNativeAnnotationItems(from: menu)
         var editingItems: [NSMenuItem] = []
 
-        editingItems.append(colorRow(iconStyle: .highlight, accessibilityPrefix: "高亮", iconAction: #selector(highlightFromIcon), colorAction: #selector(applyHighlightFromRow(_:)), selectedColor: readerLibrary?.selectedHighlightColor ?? .yellow))
-        editingItems.append(colorRow(iconStyle: .underline, accessibilityPrefix: "下划线", iconAction: #selector(toggleUnderlineFromIcon), colorAction: #selector(applyUnderlineFromRow(_:)), selectedColor: readerLibrary?.selectedUnderlineColor ?? .yellow))
-        editingItems.append(colorRow(iconStyle: .strikethrough, accessibilityPrefix: "删除线", iconAction: #selector(toggleStrikeOutFromIcon), colorAction: #selector(applyStrikeOutFromRow(_:)), selectedColor: readerLibrary?.selectedStrikeOutColor ?? .yellow))
+        editingItems.append(colorRow(iconStyle: .highlight, name: L("Highlight"), iconToolTip: L("Highlight in the current color"), iconAction: #selector(highlightFromIcon), colorAction: #selector(applyHighlightFromRow(_:)), selectedColor: readerLibrary?.selectedHighlightColor ?? .yellow))
+        editingItems.append(colorRow(iconStyle: .underline, name: L("Underline"), iconToolTip: L("Toggle underline in the current color"), iconAction: #selector(toggleUnderlineFromIcon), colorAction: #selector(applyUnderlineFromRow(_:)), selectedColor: readerLibrary?.selectedUnderlineColor ?? .yellow))
+        editingItems.append(colorRow(iconStyle: .strikethrough, name: L("Strikethrough"), iconToolTip: L("Toggle strikethrough in the current color"), iconAction: #selector(toggleStrikeOutFromIcon), colorAction: #selector(applyStrikeOutFromRow(_:)), selectedColor: readerLibrary?.selectedStrikeOutColor ?? .yellow))
         if readerLibrary?.notedMarkup(in: selection) != nil {
-            editingItems.append(actionItem("编辑笔记", action: #selector(addNote)))
-            editingItems.append(actionItem("删除笔记", action: #selector(removeNote)))
+            editingItems.append(actionItem(L("Edit Note"), action: #selector(addNote)))
+            editingItems.append(actionItem(L("Delete Note"), action: #selector(removeNote)))
         } else {
-            editingItems.append(actionItem("添加笔记", action: #selector(addNote)))
+            editingItems.append(actionItem(L("Add Note"), action: #selector(addNote)))
         }
         editingItems.append(.separator())
 
@@ -291,16 +292,6 @@ private final class MarkupPDFView: PDFView, AnnotationOverlayHost {
         return menu
     }
 
-    private func removeNativeNoteItems(from menu: NSMenu) {
-        let noteTitles: Set<String> = ["add note", "remove note"]
-        for index in menu.items.indices.reversed() {
-            let item = menu.items[index]
-            if let submenu = item.submenu { removeNativeNoteItems(from: submenu) }
-            if noteTitles.contains(item.title.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()) {
-                menu.removeItem(at: index)
-            }
-        }
-    }
 
     private func selectionForContextMenu(at event: NSEvent) -> PDFSelection? {
         if let selection = currentSelection,
@@ -314,27 +305,33 @@ private final class MarkupPDFView: PDFView, AnnotationOverlayHost {
         return page.selectionForWord(at: pagePoint)
     }
 
-    private func removeLegacyMarkupItems(from menu: NSMenu) {
-        let legacyTitles = ["highlight", "underline", "strikethrough", "strike out", "高亮", "下划线", "删除线", "移除高亮"]
+    /// Removes PDFKit's own markup and note items, which this menu replaces.
+    /// They are matched by action, not title, because titles follow the UI
+    /// language (for example "Remove Note" and "移除备注" are both `_removeNote:`).
+    private func removeNativeAnnotationItems(from menu: NSMenu) {
+        let nativeActionWords = ["markup", "note", "highlight", "underline", "strike"]
         for index in menu.items.indices.reversed() {
             let item = menu.items[index]
             if let submenu = item.submenu {
-                removeLegacyMarkupItems(from: submenu)
+                removeNativeAnnotationItems(from: submenu)
                 if submenu.items.isEmpty {
                     menu.removeItem(at: index)
                     continue
                 }
             }
-            let title = item.title.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-            // PDFKit's legacy markup palette is exposed as a blank-title custom view,
-            // so title matching alone leaves the old colors and U/S buttons behind.
-            if item.view != nil && title.isEmpty {
+            // PDFKit's markup palette is a custom view item with no title or action.
+            if item.view != nil && item.title.isEmpty {
                 menu.removeItem(at: index)
                 continue
             }
-            if !title.isEmpty && legacyTitles.contains(where: title.contains) {
+            let action = item.action.map(NSStringFromSelector)?.lowercased() ?? ""
+            if nativeActionWords.contains(where: action.contains) {
                 menu.removeItem(at: index)
             }
+        }
+        // Drop separators left doubled or dangling at the top by the removals.
+        for index in menu.items.indices.reversed() where menu.items[index].isSeparatorItem {
+            if index == 0 || menu.items[index - 1].isSeparatorItem { menu.removeItem(at: index) }
         }
     }
 
@@ -346,7 +343,8 @@ private final class MarkupPDFView: PDFView, AnnotationOverlayHost {
 
     private func colorRow(
         iconStyle: MarkupToolIconButton.Style,
-        accessibilityPrefix: String,
+        name: String,
+        iconToolTip: String,
         iconAction: Selector,
         colorAction: Selector,
         selectedColor: MarkupColor,
@@ -361,15 +359,15 @@ private final class MarkupPDFView: PDFView, AnnotationOverlayHost {
 
         let iconButton = MarkupToolIconButton(style: iconStyle, target: self, action: iconAction)
         iconButton.setFrameSize(NSSize(width: 24, height: 24))
-        iconButton.toolTip = accessibilityPrefix == "高亮" ? "添加当前颜色高亮" : "使用当前颜色切换\(accessibilityPrefix)"
-        iconButton.setAccessibilityLabel(iconButton.toolTip ?? accessibilityPrefix)
+        iconButton.toolTip = iconToolTip
+        iconButton.setAccessibilityLabel(iconToolTip)
         stack.addArrangedSubview(iconButton)
 
         for (index, color) in MarkupColor.allCases.enumerated() {
             let button = MarkupColorSwatchButton(selected: color == selectedColor, target: self, action: colorAction)
             button.tag = index
             button.contentTintColor = color.nsColor
-            button.toolTip = "\(color.title)\(accessibilityPrefix)"
+            button.toolTip = L("%@ %@", color.title, name)
             button.setAccessibilityLabel(button.toolTip ?? color.title)
             stack.addArrangedSubview(button)
         }
@@ -446,7 +444,7 @@ struct ThumbnailSidebar: View {
                             } label: {
                                 VStack(spacing: 6) {
                                     thumbnail(for: page, selected: selectedIndex == index, revision: revision)
-                                    Text("第 \(index + 1) 页")
+                                    Text(L("Page %ld", index + 1))
                                         .font(.caption)
                                         .foregroundStyle(selectedIndex == index ? Color.accentColor : .secondary)
                                 }
@@ -491,10 +489,10 @@ struct PDFOutlineSidebar: View {
                     Image(systemName: "list.bullet.indent")
                         .font(.title3)
                         .foregroundStyle(.tertiary)
-                    Text("没有文档大纲")
+                    Text(L("No Outline"))
                         .font(.caption)
                         .foregroundStyle(.secondary)
-                    Text("此 PDF 没有嵌入目录大纲。")
+                    Text(L("This PDF has no embedded outline."))
                         .font(.caption2)
                         .foregroundStyle(.tertiary)
                         .multilineTextAlignment(.center)
@@ -520,7 +518,7 @@ struct SearchResultsSidebar: View {
                     if let page = results[index].pages.first {
                         Button { onSelect(index) } label: {
                             VStack(alignment: .leading, spacing: 4) {
-                                Text("第 \(document.index(for: page) + 1) 页")
+                                Text(L("Page %ld", document.index(for: page) + 1))
                                     .font(.caption.weight(.medium))
                                     .foregroundStyle(.secondary)
                                 Text(context(forResultAt: index, on: page))
@@ -550,7 +548,7 @@ struct SearchResultsSidebar: View {
     private func context(forResultAt index: Int, on page: PDFPage) -> String {
         let selection = results[index]
         guard let text = page.string, let needle = selection.string, !needle.isEmpty else {
-            return selection.string ?? "无法提取匹配文本"
+            return selection.string ?? L("Couldn’t extract the matched text")
         }
         let ordinal = results[..<index].filter { $0.pages.first === page }.count
         var searchStart = text.startIndex
@@ -581,10 +579,10 @@ struct AnnotationListSidebar: View {
                     Image(systemName: "highlighter")
                         .font(.title3)
                         .foregroundStyle(.tertiary)
-                    Text("还没有批注")
+                    Text(L("No Annotations Yet"))
                         .font(.caption)
                         .foregroundStyle(.secondary)
-                    Text("选中文字后右键即可高亮、划线或添加笔记。")
+                    Text(L("Select text and Control-click to highlight, underline, or add a note."))
                         .font(.caption2)
                         .foregroundStyle(.tertiary)
                         .multilineTextAlignment(.center)
@@ -597,7 +595,7 @@ struct AnnotationListSidebar: View {
                             Button { onSelect(item) } label: { row(for: item) }
                                 .buttonStyle(.plain)
                                 .contextMenu {
-                                    Button("删除批注", role: .destructive) { onDelete(item) }
+                                    Button(L("Delete Annotation"), role: .destructive) { onDelete(item) }
                                 }
                         }
                     }
@@ -616,10 +614,10 @@ struct AnnotationListSidebar: View {
                 .frame(width: 9, height: 9)
                 .padding(.top, 3)
             VStack(alignment: .leading, spacing: 3) {
-                Text("\(item.kind) · 第 \(item.pageIndex + 1) 页")
+                Text(L("%@ · Page %ld", item.kind, item.pageIndex + 1))
                     .font(.caption.weight(.medium))
                     .foregroundStyle(.secondary)
-                Text(item.text.isEmpty ? "（无文字）" : item.text)
+                Text(item.text.isEmpty ? L("(No text)") : item.text)
                     .font(.system(size: 12))
                     .foregroundStyle(item.text.isEmpty ? .tertiary : .primary)
                     .lineLimit(3)
@@ -669,7 +667,7 @@ private struct PDFOutlineEntry: View {
             guard index != NSNotFound else { return }
             onSelect(index)
         } label: {
-            Text(item.label ?? "未命名条目")
+            Text(item.label ?? L("Untitled"))
                 .font(.system(size: 12))
                 .foregroundStyle(.primary)
                 .multilineTextAlignment(.leading)
@@ -677,7 +675,7 @@ private struct PDFOutlineEntry: View {
                 .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .help(item.label ?? "未命名条目")
+        .help(item.label ?? L("Untitled"))
     }
 }
 

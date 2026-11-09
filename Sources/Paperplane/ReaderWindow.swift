@@ -16,11 +16,11 @@ struct ReaderWindow: View {
                     if library.isSidebarVisible {
                         VStack(spacing: 0) {
                             HStack(spacing: 2) {
-                                sidebarModeButton(.thumbnails, title: "缩略图", symbol: "square.grid.2x2")
-                                sidebarModeButton(.outline, title: "大纲", symbol: "list.bullet.indent")
-                                sidebarModeButton(.annotations, title: "批注", symbol: "highlighter")
+                                sidebarModeButton(.thumbnails, title: L("Thumbnails"), symbol: "square.grid.2x2")
+                                sidebarModeButton(.outline, title: L("Outline"), symbol: "list.bullet.indent")
+                                sidebarModeButton(.annotations, title: L("Annotations"), symbol: "highlighter")
                                 if !library.searchResults.isEmpty {
-                                    sidebarModeButton(.searchResults, title: "结果", symbol: "text.magnifyingglass")
+                                    sidebarModeButton(.searchResults, title: L("Results"), symbol: "text.magnifyingglass")
                                 }
                             }
                             .padding(8)
@@ -69,11 +69,11 @@ struct ReaderWindow: View {
         .onAppear { library.restoreLastDocument() }
         .onChange(of: library.currentPageIndex) { value in pageInput = "\(value + 1)" }
         .onDrop(of: [UTType.fileURL], isTargeted: $isDropTargeted, perform: handleDrop)
-        .alert("操作失败", isPresented: Binding(
+        .alert(L("Operation Failed"), isPresented: Binding(
             get: { library.errorMessage != nil },
             set: { if !$0 { library.errorMessage = nil } }
         )) {
-            Button("好", role: .cancel) { library.errorMessage = nil }
+            Button(L("OK"), role: .cancel) { library.errorMessage = nil }
         } message: {
             Text(library.errorMessage ?? "")
         }
@@ -84,11 +84,11 @@ struct ReaderWindow: View {
             Button { library.isSidebarVisible.toggle() } label: {
                 Image(systemName: "sidebar.left")
             }
-            .help("显示或隐藏缩略图侧边栏")
+            .help(L("Show or hide the sidebar"))
             .disabled(library.document == nil)
 
             Button { library.presentOpenPanel() } label: {
-                Label("打开", systemImage: "doc.badge.plus")
+                Label(L("Open"), systemImage: "doc.badge.plus")
             }
             .keyboardShortcut("o", modifiers: .command)
 
@@ -96,8 +96,8 @@ struct ReaderWindow: View {
 
             Button { library.stepPage(-1) } label: { Image(systemName: "chevron.left") }
                 .disabled(library.document == nil || library.currentPageIndex <= 0)
-                .help("上一页")
-            TextField("页", text: $pageInput)
+                .help(L("Previous Page"))
+            TextField(L("Page"), text: $pageInput)
                 .textFieldStyle(.roundedBorder)
                 .frame(width: 48)
                 .multilineTextAlignment(.center)
@@ -108,18 +108,18 @@ struct ReaderWindow: View {
                 .monospacedDigit()
             Button { library.stepPage(1) } label: { Image(systemName: "chevron.right") }
                 .disabled(library.document == nil || library.currentPageIndex >= library.pageCount - 1)
-                .help("下一页")
+                .help(L("Next Page"))
 
             Divider().frame(height: 22)
 
             Button { library.zoom(by: 0.85) } label: { Image(systemName: "minus.magnifyingglass") }
                 .disabled(library.document == nil)
-                .help("缩小")
+                .help(L("Zoom Out"))
             Menu {
-                Button("适合宽度") { library.fitWidth() }
-                Button("适合页面") { library.fitPage() }
+                Button(L("Fit Width")) { library.fitWidth() }
+                Button(L("Fit Page")) { library.fitPage() }
                 Divider()
-                Button("实际大小（100%）") { library.setZoom(1) }
+                Button(L("Actual Size (100%)")) { library.setZoom(1) }
             } label: {
                 Text("\(Int(library.zoomScale * 100))%")
                     .foregroundStyle(.secondary)
@@ -127,26 +127,26 @@ struct ReaderWindow: View {
             }
             .menuStyle(.borderlessButton)
             .disabled(library.document == nil)
-            .help("缩放选项")
+            .help(L("Zoom Options"))
             Button { library.zoom(by: 1.18) } label: { Image(systemName: "plus.magnifyingglass") }
                 .disabled(library.document == nil)
-                .help("放大")
+                .help(L("Zoom In"))
 
-            Picker("页面布局", selection: $library.layoutMode) {
+            Picker(L("Page Layout"), selection: $library.layoutMode) {
                 ForEach(ReaderLayout.allCases) { layout in
                     Text(layout.title).tag(layout)
                 }
             }
             .pickerStyle(.menu)
             .labelsHidden()
-            .help("页面布局")
+            .help(L("Page Layout"))
             .disabled(library.document == nil)
 
             Button { library.save() } label: {
                 Image(systemName: "square.and.arrow.down")
             }
             .disabled(library.document == nil)
-            .help("存储批注（⌘S）")
+            .help(L("Save Annotations (⌘S)"))
 
             Spacer(minLength: 10)
 
@@ -166,7 +166,7 @@ struct ReaderWindow: View {
             Text(library.displayName)
                 .lineLimit(1)
             if library.hasUnsavedChanges {
-                Text("· 已编辑")
+                Text(L("· Edited"))
             }
             Spacer()
             Text("\(Int(library.zoomScale * 100))%")
@@ -186,7 +186,10 @@ struct ReaderWindow: View {
             // Icon above the title so four tabs fit the 220 pt sidebar.
             VStack(spacing: 2) {
                 Image(systemName: symbol)
-                Text(title).font(.system(size: 10))
+                Text(title)
+                    .font(.system(size: 10))
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.75)
             }
                 .frame(maxWidth: .infinity)
                 .padding(.vertical, 4)
@@ -202,12 +205,12 @@ struct ReaderWindow: View {
             Image(systemName: "doc.text.magnifyingglass")
                 .font(.system(size: 46, weight: .light))
                 .foregroundStyle(.tertiary)
-            Text("打开一份 PDF 开始阅读")
+            Text(L("Open a PDF to Start Reading"))
                 .font(.title3.weight(.medium))
-            Text("将 PDF 拖到窗口，或从文件中选择")
+            Text(L("Drag a PDF into the window, or choose one from your files."))
                 .foregroundStyle(.secondary)
             Button { library.presentOpenPanel() } label: {
-                Label("选择 PDF…", systemImage: "folder")
+                Label(L("Choose PDF…"), systemImage: "folder")
             }
             .buttonStyle(.borderedProminent)
             .padding(.top, 4)
@@ -249,7 +252,7 @@ private struct SearchField: View {
     var body: some View {
         HStack(spacing: 6) {
             Image(systemName: "magnifyingglass").foregroundStyle(.secondary)
-            TextField("在文稿中查找", text: $library.searchText)
+            TextField(L("Find in Document"), text: $library.searchText)
                 .textFieldStyle(.plain)
                 .focused($isFocused)
                 .onSubmit {
@@ -275,7 +278,7 @@ private struct SearchField: View {
                     library.isSidebarVisible = true
                     library.sidebarMode = .searchResults
                 } label: {
-                    Text(library.searchResults.isEmpty ? "0 项" : "\(library.searchResultIndex + 1)/\(library.searchResults.count)")
+                    Text(library.searchResults.isEmpty ? L("No Results") : "\(library.searchResultIndex + 1)/\(library.searchResults.count)")
                         .font(.caption2)
                         .foregroundStyle(.secondary)
                         .fixedSize()
@@ -293,15 +296,15 @@ private struct SearchField: View {
                     .buttonStyle(.plain)
                     .foregroundStyle(.tertiary)
             }
-            searchOptionButton("Aa", label: "区分大小写", isActive: library.isCaseSensitiveSearch) {
+            searchOptionButton("Aa", label: L("Match Case"), isActive: library.isCaseSensitiveSearch) {
                 library.isCaseSensitiveSearch.toggle()
                 library.find(library.searchText)
             }
-            searchOptionButton("ab", label: "全词匹配", isActive: library.isWholeWordSearch, usesWordBracket: true) {
+            searchOptionButton("ab", label: L("Whole Words"), isActive: library.isWholeWordSearch, usesWordBracket: true) {
                 library.isWholeWordSearch.toggle()
                 library.find(library.searchText)
             }
-            searchOptionButton(".*", label: "正则表达式", isActive: library.isRegularExpressionSearch) {
+            searchOptionButton(".*", label: L("Regular Expression"), isActive: library.isRegularExpressionSearch) {
                 library.isRegularExpressionSearch.toggle()
                 library.find(library.searchText)
             }
@@ -341,8 +344,8 @@ private struct SearchField: View {
         .background(isActive ? Color.accentColor.opacity(0.12) : .clear,
                     in: RoundedRectangle(cornerRadius: 4))
         .accessibilityLabel(label)
-        .accessibilityValue(isActive ? "开启" : "关闭")
-        .help("\(label)：\(isActive ? "已启用" : "已关闭")")
+        .accessibilityValue(isActive ? L("On") : L("Off"))
+        .help(L("%@: %@", label, isActive ? L("On") : L("Off")))
     }
 }
 

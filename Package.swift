@@ -3,6 +3,7 @@ import PackageDescription
 
 let package = Package(
     name: "Paperplane",
+    defaultLocalization: "en",
     platforms: [.macOS(.v13)],
     products: [
         .executable(name: "Paperplane", targets: ["Paperplane"]),
@@ -14,11 +15,13 @@ let package = Package(
         .executableTarget(
             name: "Paperplane",
             dependencies: ["PaperplaneCore"],
-            path: "Sources/Paperplane"
+            path: "Sources/Paperplane",
+            resources: [.process("Resources")]
         ),
         .target(
             name: "PaperplaneCore",
-            path: "Sources/PaperplaneCore"
+            path: "Sources/PaperplaneCore",
+            resources: [.process("Resources")]
         ),
         .testTarget(
             name: "PaperplaneCoreTests",

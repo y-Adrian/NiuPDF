@@ -13,10 +13,10 @@ enum ReaderLayout: String, CaseIterable, Identifiable {
 
     var title: String {
         switch self {
-        case .continuous: "连续滚动"
-        case .singlePage: "单页"
-        case .twoPage: "双页连续"
-        case .twoPageBook: "封面 + 双页"
+        case .continuous: L("Continuous Scroll")
+        case .singlePage: L("Single Page")
+        case .twoPage: L("Two Pages Continuous")
+        case .twoPageBook: L("Cover + Two Pages")
         }
     }
 
@@ -71,13 +71,13 @@ struct MarkupColor: Identifiable, Hashable {
         self.title = title
     }
 
-    static let yellow = MarkupColor(hex: "FFD129", title: "黄色")
-    static let orange = MarkupColor(hex: "FF9F0A", title: "橙色")
-    static let red = MarkupColor(hex: "FF3B30", title: "红色")
-    static let green = MarkupColor(hex: "34C759", title: "绿色")
-    static let cyan = MarkupColor(hex: "32ADE6", title: "青色")
-    static let blue = MarkupColor(hex: "007AFF", title: "蓝色")
-    static let purple = MarkupColor(hex: "AF52DE", title: "紫色")
+    static let yellow = MarkupColor(hex: "FFD129", title: L("Yellow"))
+    static let orange = MarkupColor(hex: "FF9F0A", title: L("Orange"))
+    static let red = MarkupColor(hex: "FF3B30", title: L("Red"))
+    static let green = MarkupColor(hex: "34C759", title: L("Green"))
+    static let cyan = MarkupColor(hex: "32ADE6", title: L("Cyan"))
+    static let blue = MarkupColor(hex: "007AFF", title: L("Blue"))
+    static let purple = MarkupColor(hex: "AF52DE", title: L("Purple"))
     static let allCases = [yellow, orange, red, green, cyan, blue, purple]
 }
 
@@ -125,7 +125,7 @@ final class ReaderLibrary: ObservableObject {
         static let zoomScale = "lastOpenedPDFZoomScale"
     }
 
-    var displayName: String { fileURL?.deletingPathExtension().lastPathComponent ?? "未打开文稿" }
+    var displayName: String { fileURL?.deletingPathExtension().lastPathComponent ?? L("No Document") }
 
     func restoreLastDocument() {
         guard !didAttemptRestore else { return }
@@ -143,7 +143,7 @@ final class ReaderLibrary: ObservableObject {
             open(url, restoringLastDocument: true)
         } catch {
             forgetLastDocument()
-            errorMessage = "无法恢复最近打开的 PDF。请重新选择文件。\n\(error.localizedDescription)"
+            errorMessage = L("Couldn’t restore the last opened PDF. Choose the file again.") + "\n" + error.localizedDescription
         }
     }
 
@@ -160,7 +160,7 @@ final class ReaderLibrary: ObservableObject {
         panel.allowedContentTypes = [.pdf]
         panel.allowsMultipleSelection = false
         panel.canChooseDirectories = false
-        panel.prompt = "打开"
+        panel.prompt = L("Open")
         panel.begin { [weak self] response in
             guard response == .OK, let url = panel.url else { return }
             Task { @MainActor in self?.open(url) }
@@ -230,19 +230,19 @@ final class ReaderLibrary: ObservableObject {
 
     /// Asks for the user password of an encrypted PDF until it unlocks or the user cancels.
     private func unlock(_ document: PDFDocument, named name: String) -> Bool {
-        var message = "“\(name)”受密码保护。请输入密码以打开。"
+        var message = L("“%@” is password protected. Enter its password to open it.", name)
         while true {
             let alert = NSAlert()
-            alert.messageText = "输入文稿密码"
+            alert.messageText = L("Enter Document Password")
             alert.informativeText = message
-            alert.addButton(withTitle: "打开")
-            alert.addButton(withTitle: "取消")
+            alert.addButton(withTitle: L("Open"))
+            alert.addButton(withTitle: L("Cancel"))
             let field = NSSecureTextField(frame: NSRect(x: 0, y: 0, width: 240, height: 24))
             alert.accessoryView = field
             alert.window.initialFirstResponder = field
             guard alert.runModal() == .alertFirstButtonReturn else { return false }
             if document.unlock(withPassword: field.stringValue) { return true }
-            message = "密码不正确，请重试。"
+            message = L("Incorrect password. Try again.")
         }
     }
 
@@ -250,11 +250,11 @@ final class ReaderLibrary: ObservableObject {
     func confirmDiscardingUnsavedChanges() -> Bool {
         guard hasUnsavedChanges, document != nil else { return true }
         let alert = NSAlert()
-        alert.messageText = "要存储对“\(displayName)”所做的更改吗？"
-        alert.informativeText = "如果不存储，你的批注更改将会丢失。"
-        alert.addButton(withTitle: "存储")
-        alert.addButton(withTitle: "取消")
-        alert.addButton(withTitle: "不存储")
+        alert.messageText = L("Do you want to save the changes made to “%@”?", displayName)
+        alert.informativeText = L("Your annotation changes will be lost if you don’t save them.")
+        alert.addButton(withTitle: L("Save"))
+        alert.addButton(withTitle: L("Cancel"))
+        alert.addButton(withTitle: L("Don’t Save"))
         switch alert.runModal() {
         case .alertFirstButtonReturn:
             return save()
@@ -291,7 +291,7 @@ final class ReaderLibrary: ObservableObject {
             UserDefaults.standard.set(bookmark, forKey: ReadingStateKey.bookmark)
         } catch {
             // The document remains usable in this session even if macOS cannot create a bookmark.
-            errorMessage = "文稿已打开，但无法记住它以供下次恢复。\n\(error.localizedDescription)"
+            errorMessage = L("The document is open, but it couldn’t be remembered for next time.") + "\n" + error.localizedDescription
         }
     }
 
@@ -526,9 +526,9 @@ final class ReaderLibrary: ObservableObject {
 
     private func markupActionName(_ type: PDFAnnotationSubtype) -> String {
         switch type {
-        case .underline: "下划线"
-        case .strikeOut: "删除线"
-        default: "高亮"
+        case .underline: L("Underline")
+        case .strikeOut: L("Strikethrough")
+        default: L("Highlight")
         }
     }
 
@@ -615,7 +615,7 @@ final class ReaderLibrary: ObservableObject {
                 refreshPDFView()
             } else {
                 storeNote(text, for: annotation)
-                commit(pending.edit, actionName: "添加笔记")
+                commit(pending.edit, actionName: L("Add Note"))
             }
             return
         }
@@ -633,7 +633,7 @@ final class ReaderLibrary: ObservableObject {
         pdfView?.undoManager?.registerUndo(withTarget: self) { target in
             target.setNote(annotation, to: previous)
         }
-        pdfView?.undoManager?.setActionName(text.isEmpty ? "删除笔记" : "编辑笔记")
+        pdfView?.undoManager?.setActionName(text.isEmpty ? L("Delete Note") : L("Edit Note"))
         annotationsDidChange()
     }
 
@@ -661,7 +661,7 @@ final class ReaderLibrary: ObservableObject {
         pdfView?.undoManager?.registerUndo(withTarget: self) { target in
             target.setColor(annotation, to: previous)
         }
-        pdfView?.undoManager?.setActionName("更改颜色")
+        pdfView?.undoManager?.setActionName(L("Change Color"))
         annotationsDidChange()
     }
 
@@ -674,7 +674,7 @@ final class ReaderLibrary: ObservableObject {
             return
         }
         guard let page = annotation.page else { return }
-        recordAnnotationEdit(annotation.type == "Text" ? "删除笔记" : "删除批注", pages: [page]) {
+        recordAnnotationEdit(annotation.type == "Text" ? L("Delete Note") : L("Delete Annotation"), pages: [page]) {
             page.removeAnnotation(annotation)
         }
     }
@@ -816,17 +816,17 @@ final class ReaderLibrary: ObservableObject {
     // MARK: - Annotation list
 
     private static let listedAnnotationKinds: [String: String] = [
-        "Highlight": "高亮",
-        "Underline": "下划线",
-        "StrikeOut": "删除线",
-        "Squiggly": "波浪线",
-        "Text": "笔记",
-        "FreeText": "文本框",
-        "Ink": "手绘",
-        "Square": "矩形",
-        "Circle": "椭圆",
-        "Line": "线条",
-        "Stamp": "图章"
+        "Highlight": L("Highlight"),
+        "Underline": L("Underline"),
+        "StrikeOut": L("Strikethrough"),
+        "Squiggly": L("Squiggly"),
+        "Text": L("Note"),
+        "FreeText": L("Text Box"),
+        "Ink": L("Drawing"),
+        "Square": L("Rectangle"),
+        "Circle": L("Ellipse"),
+        "Line": L("Line"),
+        "Stamp": L("Stamp")
     ]
 
     /// Every user-facing annotation in page order. Links, form widgets and popups are skipped.

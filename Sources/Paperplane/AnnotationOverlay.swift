@@ -304,6 +304,8 @@ private final class NotePreviewPanel {
         panel.hasShadow = true
         panel.level = .floating
         panel.ignoresMouseEvents = true
+        // Light like the note editor, also in dark mode.
+        panel.appearance = NSAppearance(named: .aqua)
         panel.hidesOnDeactivate = true
 
         background.material = .toolTip
@@ -371,32 +373,40 @@ final class AnnotationEditorController: NSViewController, NSPopoverDelegate {
 
     private var isMarkup: Bool { MarkupEngine.isMarkup(annotation) }
 
+    /// One plain light surface for the whole popover: the color swatches sit on
+    /// the same background as the note text, separated only by hairlines.
     override func loadView() {
+        let width: CGFloat = 264
         var rows: [NSView] = []
         if isMarkup {
             let row = NSStackView()
             row.orientation = .horizontal
-            row.spacing = 4
+            row.spacing = 6
+            row.edgeInsets = NSEdgeInsets(top: 10, left: 12, bottom: 10, right: 12)
             for (index, color) in MarkupColor.allCases.enumerated() {
                 let button = NSButton(title: "", target: self, action: #selector(pickColor(_:)))
                 button.isBordered = false
                 button.imagePosition = .imageOnly
+                button.imageScaling = .scaleProportionallyUpOrDown
                 button.tag = index
                 button.contentTintColor = color.nsColor
                 button.toolTip = color.title
                 button.setAccessibilityLabel(color.title)
-                button.widthAnchor.constraint(equalToConstant: 22).isActive = true
-                button.heightAnchor.constraint(equalToConstant: 22).isActive = true
+                button.widthAnchor.constraint(equalToConstant: 18).isActive = true
+                button.heightAnchor.constraint(equalToConstant: 18).isActive = true
                 swatches.append(button)
                 row.addArrangedSubview(button)
             }
             updateSwatches()
             rows.append(row)
+            rows.append(Self.hairline())
         }
 
-        let scrollView = NSScrollView(frame: NSRect(x: 0, y: 0, width: 260, height: 110))
+        let scrollView = NSScrollView(frame: NSRect(x: 0, y: 0, width: width, height: 104))
         scrollView.hasVerticalScroller = true
-        scrollView.borderType = .bezelBorder
+        scrollView.autohidesScrollers = true
+        scrollView.borderType = .noBorder
+        scrollView.drawsBackground = false
         textView.frame = NSRect(origin: .zero, size: scrollView.contentSize)
         textView.minSize = NSSize(width: 0, height: scrollView.contentSize.height)
         textView.maxSize = NSSize(width: CGFloat.greatestFiniteMagnitude, height: CGFloat.greatestFiniteMagnitude)
@@ -405,40 +415,70 @@ final class AnnotationEditorController: NSViewController, NSPopoverDelegate {
         textView.textContainer?.widthTracksTextView = true
         textView.isRichText = false
         textView.allowsUndo = true
+        textView.drawsBackground = false
         textView.font = .systemFont(ofSize: 13)
-        textView.textContainerInset = NSSize(width: 4, height: 6)
+        textView.textContainerInset = NSSize(width: 8, height: 8)
         textView.string = library?.note(of: annotation) ?? ""
-        textView.setAccessibilityLabel("笔记")
+        textView.setAccessibilityLabel(L("Note"))
         scrollView.documentView = textView
-        scrollView.widthAnchor.constraint(equalToConstant: 260).isActive = true
-        scrollView.heightAnchor.constraint(equalToConstant: 110).isActive = true
+        scrollView.heightAnchor.constraint(equalToConstant: 104).isActive = true
         rows.append(scrollView)
+        rows.append(Self.hairline())
 
-        let deleteButton = NSButton(title: isMarkup ? "删除标注" : "删除笔记", target: self, action: #selector(deleteAnnotation))
-        deleteButton.bezelStyle = .rounded
-        deleteButton.contentTintColor = .systemRed
-        let doneButton = NSButton(title: "完成", target: self, action: #selector(finish))
-        doneButton.bezelStyle = .rounded
+        let deleteButton = Self.textButton(
+            isMarkup ? L("Delete Markup") : L("Delete Note"),
+            color: .systemRed,
+            target: self,
+            action: #selector(deleteAnnotation)
+        )
+        let doneButton = Self.textButton(L("Done"), color: .controlAccentColor, target: self, action: #selector(finish))
         // Plain Return inserts a line break in the note; ⌘Return finishes.
         doneButton.keyEquivalent = "\r"
         doneButton.keyEquivalentModifierMask = .command
-        doneButton.toolTip = "完成（⌘↩）"
+        doneButton.toolTip = L("Done (⌘↩)")
         let buttons = NSStackView(views: [deleteButton, NSView(), doneButton])
         buttons.orientation = .horizontal
+        buttons.edgeInsets = NSEdgeInsets(top: 8, left: 12, bottom: 8, right: 12)
         rows.append(buttons)
 
         let stack = NSStackView(views: rows)
         stack.orientation = .vertical
         stack.alignment = .leading
-        stack.spacing = 8
-        stack.edgeInsets = NSEdgeInsets(top: 10, left: 10, bottom: 10, right: 10)
-        buttons.widthAnchor.constraint(equalTo: scrollView.widthAnchor).isActive = true
+        stack.spacing = 0
+        for row in rows { row.widthAnchor.constraint(equalToConstant: width).isActive = true }
         view = stack
+    }
+
+    override func viewWillAppear() {
+        super.viewWillAppear()
+        // The popover's own material is a translucent gray; paint its frame,
+        // arrow included, with the same light background as the text area.
+        guard let frameView = view.window?.contentView?.superview,
+              !frameView.subviews.contains(where: { $0 is PopoverBackgroundView }) else { return }
+        let background = PopoverBackgroundView(frame: frameView.bounds)
+        background.autoresizingMask = [.width, .height]
+        frameView.addSubview(background, positioned: .below, relativeTo: nil)
     }
 
     override func viewDidAppear() {
         super.viewDidAppear()
         view.window?.makeFirstResponder(textView)
+    }
+
+    private static func hairline() -> NSView {
+        let line = NSBox()
+        line.boxType = .separator
+        return line
+    }
+
+    private static func textButton(_ title: String, color: NSColor, target: AnyObject, action: Selector) -> NSButton {
+        let button = NSButton(title: title, target: target, action: action)
+        button.isBordered = false
+        button.attributedTitle = NSAttributedString(string: title, attributes: [
+            .foregroundColor: color,
+            .font: NSFont.systemFont(ofSize: 13, weight: .medium)
+        ])
+        return button
     }
 
     private func updateSwatches() {
@@ -456,7 +496,7 @@ final class AnnotationEditorController: NSViewController, NSPopoverDelegate {
                 systemSymbolName: isCurrent ? "checkmark.circle.fill" : "circle.fill",
                 accessibilityDescription: nil
             )
-            button.setAccessibilityValue(isCurrent ? "已选中" : nil)
+            button.setAccessibilityValue(isCurrent ? L("Selected") : nil)
         }
     }
 
@@ -477,5 +517,14 @@ final class AnnotationEditorController: NSViewController, NSPopoverDelegate {
     func popoverWillClose(_ notification: Notification) {
         guard !isDeleted else { return }
         library?.finishEditing(annotation, note: textView.string)
+    }
+}
+
+/// Fills the popover frame with the text background color, which follows the
+/// light and dark appearance.
+private final class PopoverBackgroundView: NSView {
+    override func draw(_ dirtyRect: NSRect) {
+        NSColor.textBackgroundColor.setFill()
+        dirtyRect.fill()
     }
 }

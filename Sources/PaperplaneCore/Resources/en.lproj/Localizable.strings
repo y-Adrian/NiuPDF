@@ -1,0 +1,7 @@
+/* UI strings. Keys are the English text; keep every key in both en and zh-Hans. */
+
+"Couldn’t safely coordinate file access: %@" = "Couldn’t safely coordinate file access: %@";
+"Couldn’t write a temporary PDF. The original file is unchanged." = "Couldn’t write a temporary PDF. The original file is unchanged.";
+"The PDF file can’t be read." = "The PDF file can’t be read.";
+"The file was changed by another app after it was opened. To protect those changes, it was not overwritten. Reopen the file before editing it again." = "The file was changed by another app after it was opened. To protect those changes, it was not overwritten. Reopen the file before editing it again.";
+"The temporary PDF failed verification. The original file is unchanged." = "The temporary PDF failed verification. The original file is unchanged.";

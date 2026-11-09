@@ -16,6 +16,10 @@ A small native macOS PDF reader built with SwiftUI and PDFKit. It takes inspirat
 - Open password-protected PDFs
 - Save PDF annotations with `⌘S`; unsaved changes are confirmed before opening another file or quitting
 
+## Languages
+
+The interface follows the macOS language setting and is fully English or fully Simplified Chinese, including PDFKit's own menu items. UI strings live in `Sources/*/Resources/{en,zh-Hans}.lproj/Localizable.strings`; keys are the English text, and every key must exist in both tables.
+
 ## Build and run
 
 Requires macOS 13 or later and Xcode 27. Open `Paperplane.xcodeproj`, select the `Paperplane` scheme, and run it. The Xcode target builds a sandboxed macOS app with access to files explicitly selected by the user.
