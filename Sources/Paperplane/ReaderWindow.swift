@@ -1,4 +1,5 @@
 import PDFKit
+import PaperplaneCore
 import SwiftUI
 import UniformTypeIdentifiers
 
@@ -13,6 +14,10 @@ struct ReaderWindow: View {
             Divider()
             if library.isAnnotationBarVisible, library.document != nil {
                 AnnotationToolBar()
+                Divider()
+            }
+            if library.expandedMode == .export, library.document != nil {
+                ExportBar()
                 Divider()
             }
             if let document = library.document {
@@ -155,6 +160,16 @@ struct ReaderWindow: View {
             }
             .disabled(library.document == nil)
             .help(L("Show or hide the annotation tools"))
+
+            ModeTab(
+                title: L("Export"),
+                symbol: "square.and.arrow.up",
+                isActive: library.expandedMode == .export
+            ) {
+                library.expandedMode = library.expandedMode == .export ? nil : .export
+            }
+            .disabled(library.document == nil)
+            .help(L("Show or hide the export options"))
 
             Button { library.save() } label: {
                 Image(systemName: "square.and.arrow.down")
@@ -607,5 +622,95 @@ struct FontFamilyMenu: View {
         .menuStyle(.borderlessButton)
         .fixedSize()
         .help(L("Font"))
+    }
+}
+
+/// The expanded export row: a PDF copy with annotations kept or flattened, and
+/// page images. While images are written it shows progress and Cancel.
+private struct ExportBar: View {
+    @EnvironmentObject private var library: ReaderLibrary
+
+    var body: some View {
+        HStack(spacing: 18) {
+            Spacer(minLength: 0)
+            if let progress = library.exportProgress {
+                ProgressView(value: Double(progress.done), total: Double(max(progress.total, 1)))
+                    .frame(width: 220)
+                Text(L("Exporting %ld of %ld…", progress.done, progress.total))
+                    .monospacedDigit()
+                Button(L("Cancel")) { library.cancelExport() }
+            } else {
+                pdfCopyControls
+                Divider().frame(height: 20)
+                imageControls
+            }
+            if let status = library.exportStatus {
+                Text(status)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+            }
+            Spacer(minLength: 0)
+        }
+        .controlSize(.small)
+        .padding(.horizontal, 14)
+        .padding(.vertical, 7)
+        .frame(maxWidth: .infinity)
+        .background(.bar)
+    }
+
+    private var pdfCopyControls: some View {
+        HStack(spacing: 8) {
+            Label(L("PDF Copy"), systemImage: "doc.on.doc")
+                .foregroundStyle(.secondary)
+            Picker(L("Annotations"), selection: $library.exportFlattensAnnotations) {
+                Text(L("Keep Annotations")).tag(false)
+                Text(L("Flatten Annotations")).tag(true)
+            }
+            .pickerStyle(.segmented)
+            .labelsHidden()
+            .fixedSize()
+            .help(L("Flattened annotations become part of the page and can no longer be edited."))
+            Button(L("Export…")) { library.exportPDFCopy() }
+                .buttonStyle(.bordered)
+        }
+    }
+
+    private var imageControls: some View {
+        HStack(spacing: 8) {
+            Label(L("Images"), systemImage: "photo")
+                .foregroundStyle(.secondary)
+            Picker(L("Format"), selection: $library.imageExportFormat) {
+                Text(verbatim: "PNG").tag(PageImageFormat.png)
+                Text(verbatim: "JPEG").tag(PageImageFormat.jpeg)
+            }
+            .pickerStyle(.segmented)
+            .labelsHidden()
+            .fixedSize()
+            Picker(L("Pages"), selection: $library.imageExportRange) {
+                ForEach(ImageExportRange.allCases) { Text($0.title).tag($0) }
+            }
+            .pickerStyle(.segmented)
+            .labelsHidden()
+            .fixedSize()
+            if library.imageExportRange == .custom {
+                TextField(L("1-3, 5"), text: $library.imageExportPages)
+                    .textFieldStyle(.roundedBorder)
+                    .frame(width: 80)
+                    .onSubmit { library.exportImages() }
+            }
+            Menu {
+                ForEach(ReaderLibrary.exportResolutions, id: \.self) { resolution in
+                    Button(L("%ld dpi", Int(resolution))) { library.imageExportResolution = resolution }
+                }
+            } label: {
+                Text(L("%ld dpi", Int(library.imageExportResolution)))
+            }
+            .menuStyle(.borderlessButton)
+            .fixedSize()
+            .help(L("Resolution"))
+            Button(L("Export…")) { library.exportImages() }
+                .buttonStyle(.bordered)
+        }
     }
 }

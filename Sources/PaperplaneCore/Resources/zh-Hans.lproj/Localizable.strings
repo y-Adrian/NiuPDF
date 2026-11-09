@@ -6,3 +6,5 @@
 "The file was changed by another app after it was opened. To protect those changes, it was not overwritten. Reopen the file before editing it again." = "文件在打开后已被其他程序修改。为保护对方的修改，本次没有覆盖文件。请重新打开文件后再编辑。";
 "The temporary PDF failed verification. The original file is unchanged." = "临时 PDF 校验失败。原文件未更改。";
 "Couldn’t finish writing the PDF. A verified copy of your changes was kept at %@." = "无法完成 PDF 写入。已校验的更改副本保存在 %@。";
+"Enter pages such as 1-3, 5 or 8-, between 1 and %ld." = "请输入 1 到 %ld 之间的页码，例如 1-3, 5 或 8-。";
+"The exported file couldn’t be written." = "无法写入导出的文件。";

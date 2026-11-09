@@ -32,6 +32,27 @@ enum ReaderLayout: String, CaseIterable, Identifiable {
     var isTwoPage: Bool { self == .twoPage || self == .twoPageBook }
 }
 
+enum ToolbarMode {
+    case annotate
+    case export
+}
+
+enum ImageExportRange: String, CaseIterable, Identifiable {
+    case currentPage
+    case allPages
+    case custom
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .currentPage: L("Current Page")
+        case .allPages: L("All Pages")
+        case .custom: L("Page Range")
+        }
+    }
+}
+
 enum SidebarMode {
     case thumbnails
     case outline
@@ -168,10 +189,14 @@ final class ReaderLibrary: ObservableObject {
     @Published var activeTool: AnnotationTool = .select {
         didSet { if activeTool != oldValue { onToolChange?() } }
     }
-    /// Whether the annotation tool row under the toolbar is expanded. Collapsing
-    /// it returns to plain selection.
-    @Published var isAnnotationBarVisible = false {
-        didSet { if !isAnnotationBarVisible { activeTool = .select } }
+    /// The toolbar tab whose row is expanded under the toolbar; one at a time.
+    /// Leaving the annotation row returns to plain selection.
+    @Published var expandedMode: ToolbarMode? {
+        didSet { if expandedMode != .annotate { activeTool = .select } }
+    }
+    var isAnnotationBarVisible: Bool {
+        get { expandedMode == .annotate }
+        set { expandedMode = newValue ? .annotate : (expandedMode == .annotate ? nil : expandedMode) }
     }
     /// Set by the PDF view: ends drags and inline text editing on a tool change.
     var onToolChange: (() -> Void)?
@@ -199,6 +224,7 @@ final class ReaderLibrary: ObservableObject {
     }
 
     weak var pdfView: PDFView?
+    private var documentPassword: String?
     private var scopedURL: URL?
     private var fileRevision: PDFFileRevision?
     private var didAttemptRestore = false
@@ -271,7 +297,10 @@ final class ReaderLibrary: ObservableObject {
             return
         }
 
+        let previousPassword = documentPassword
+        documentPassword = nil
         if opened.document.isLocked, !unlock(opened.document, named: url.lastPathComponent) {
+            documentPassword = previousPassword
             if didStartAccess { url.stopAccessingSecurityScopedResource() }
             return
         }
@@ -328,7 +357,11 @@ final class ReaderLibrary: ObservableObject {
             alert.accessoryView = field
             alert.window.initialFirstResponder = field
             guard alert.runModal() == .alertFirstButtonReturn else { return false }
-            if document.unlock(withPassword: field.stringValue) { return true }
+            if document.unlock(withPassword: field.stringValue) {
+                // Kept in memory only, to unlock the copies that exports render from.
+                documentPassword = field.stringValue
+                return true
+            }
             message = L("Incorrect password. Try again.")
         }
     }
@@ -1367,6 +1400,179 @@ final class ReaderLibrary: ObservableObject {
         updateCurrentPage(document.index(for: page))
     }
 
+    // MARK: - Export
+
+    static let exportResolutions: [CGFloat] = [72, 150, 300]
+    @Published var exportFlattensAnnotations = false
+    @Published var imageExportFormat: PageImageFormat = .png
+    @Published var imageExportRange: ImageExportRange = .currentPage
+    @Published var imageExportPages = ""
+    @Published var imageExportResolution: CGFloat = 150
+    /// Images written so far and in all, while an image export runs.
+    @Published private(set) var exportProgress: (done: Int, total: Int)?
+    /// A short result shown in the export row for a few seconds.
+    @Published private(set) var exportStatus: String?
+    private var exportTask: Task<Void, Never>?
+
+    /// Writes a PDF copy, with annotations editable or flattened into the pages.
+    func exportPDFCopy() {
+        guard let document else { return }
+        commitPendingEdits?()
+        let panel = NSSavePanel()
+        panel.allowedContentTypes = [.pdf]
+        panel.nameFieldStringValue = (exportFlattensAnnotations ? L("%@ (Flattened)", displayName) : L("%@ (Copy)", displayName)) + ".pdf"
+        panel.prompt = L("Export")
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        writePDFCopy(of: document, to: url)
+    }
+
+    func writePDFCopy(of document: PDFDocument, to url: URL) {
+        if let fileURL, url.standardizedFileURL == fileURL.standardizedFileURL {
+            errorMessage = L("Choose another name. The open document is saved with ⌘S.")
+            return
+        }
+        do {
+            try withNativeNotesRestored {
+                try DocumentExporter.writeCopy(of: document, to: url, flattenAnnotations: exportFlattensAnnotations)
+            }
+            showExportStatus(L("Exported “%@”.", url.lastPathComponent))
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+    }
+
+    /// Renders the chosen pages to image files in the background. One page is
+    /// saved under a chosen name; several go into a chosen folder.
+    func exportImages() {
+        guard let document, exportProgress == nil else { return }
+        commitPendingEdits?()
+        let pages: [Int]
+        switch imageExportRange {
+        case .currentPage:
+            pages = [currentPageIndex]
+        case .allPages:
+            pages = Array(0..<document.pageCount)
+        case .custom:
+            do {
+                pages = try PageRangeParser.pages(from: imageExportPages, pageCount: document.pageCount)
+            } catch {
+                errorMessage = error.localizedDescription
+                return
+            }
+        }
+        guard let destinations = imageDestinations(for: pages) else { return }
+        startImageExport(of: document, to: destinations)
+    }
+
+    /// Writes each page index to its file in the background.
+    func startImageExport(of document: PDFDocument, to destinations: [(Int, URL)]) {
+        guard exportProgress == nil else { return }
+        guard let snapshot = exportSnapshot(of: document) else {
+            errorMessage = DocumentExportError.unableToWrite.localizedDescription
+            return
+        }
+        let format = imageExportFormat
+        let resolution = imageExportResolution
+        let total = destinations.count
+        exportProgress = (0, total)
+        let report: @MainActor @Sendable (Int) -> Void = { [weak self] done in
+            self?.exportProgress = (done, total)
+        }
+        let finish: @MainActor @Sendable (Int, String?) -> Void = { [weak self] written, failure in
+            self?.finishImageExport(written: written, failure: failure, destinations: destinations)
+        }
+        exportTask = Task.detached(priority: .userInitiated) {
+            var written = 0
+            var failure: String?
+            for (index, url) in destinations {
+                if Task.isCancelled { break }
+                guard let page = snapshot.value.page(at: index),
+                      let data = DocumentExporter.imageData(for: page, dpi: resolution, format: format) else {
+                    failure = DocumentExportError.unableToWrite.localizedDescription
+                    break
+                }
+                do {
+                    // Not atomic: a single chosen file grants no access to its folder.
+                    try data.write(to: url)
+                } catch {
+                    failure = error.localizedDescription
+                    break
+                }
+                written += 1
+                await report(written)
+            }
+            await finish(written, failure)
+        }
+    }
+
+    private func finishImageExport(written: Int, failure: String?, destinations: [(Int, URL)]) {
+        exportProgress = nil
+        exportTask = nil
+        let total = destinations.count
+        if let failure {
+            errorMessage = failure
+        } else if written < total {
+            showExportStatus(L("Export stopped after %ld of %ld images.", written, total))
+        } else if total == 1, let url = destinations.first?.1 {
+            showExportStatus(L("Exported “%@”.", url.lastPathComponent))
+        } else if let folder = destinations.first?.1.deletingLastPathComponent() {
+            showExportStatus(L("Exported %ld images to “%@”.", total, folder.lastPathComponent))
+        }
+    }
+
+    func cancelExport() {
+        exportTask?.cancel()
+    }
+
+    /// Asks where the images go; nil when the user cancels.
+    private func imageDestinations(for pages: [Int]) -> [(Int, URL)]? {
+        let fileExtension = imageExportFormat.fileExtension
+        func fileName(_ index: Int) -> String { L("%@ - Page %ld", displayName, index + 1) + "." + fileExtension }
+        if pages.count == 1, let page = pages.first {
+            let panel = NSSavePanel()
+            panel.allowedContentTypes = [imageExportFormat == .png ? .png : .jpeg]
+            panel.nameFieldStringValue = fileName(page)
+            panel.prompt = L("Export")
+            guard panel.runModal() == .OK, let url = panel.url else { return nil }
+            return [(page, url)]
+        }
+        let panel = NSOpenPanel()
+        panel.canChooseFiles = false
+        panel.canChooseDirectories = true
+        panel.canCreateDirectories = true
+        panel.prompt = L("Export")
+        guard panel.runModal() == .OK, let folder = panel.url else { return nil }
+        let destinations = pages.map { ($0, folder.appendingPathComponent(fileName($0))) }
+        let existing = destinations.filter { FileManager.default.fileExists(atPath: $0.1.path) }.count
+        if existing > 0 {
+            let alert = NSAlert()
+            alert.messageText = L("Replace %ld existing files?", existing)
+            alert.addButton(withTitle: L("Replace"))
+            alert.addButton(withTitle: L("Cancel"))
+            guard alert.runModal() == .alertFirstButtonReturn else { return nil }
+        }
+        return destinations
+    }
+
+    /// A private copy of the document as it would be saved, for rendering off
+    /// the main thread without touching the document on screen.
+    private func exportSnapshot(of document: PDFDocument) -> UncheckedSendable<PDFDocument>? {
+        guard let data = withNativeNotesRestored({ document.dataRepresentation() }),
+              let copy = PDFDocument(data: data) else { return nil }
+        if copy.isLocked {
+            guard let documentPassword, copy.unlock(withPassword: documentPassword) else { return nil }
+        }
+        return UncheckedSendable(value: copy)
+    }
+
+    private func showExportStatus(_ text: String) {
+        exportStatus = text
+        Task { @MainActor [weak self] in
+            try? await Task.sleep(nanoseconds: 4_000_000_000)
+            if self?.exportStatus == text { self?.exportStatus = nil }
+        }
+    }
+
     @discardableResult
     func save() -> Bool {
         commitPendingEdits?()
@@ -1383,4 +1589,9 @@ final class ReaderLibrary: ObservableObject {
             return false
         }
     }
+}
+
+/// Hands a value to a background task that alone uses it from then on.
+struct UncheckedSendable<Value>: @unchecked Sendable {
+    let value: Value
 }

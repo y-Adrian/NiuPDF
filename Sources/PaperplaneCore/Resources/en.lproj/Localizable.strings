@@ -6,3 +6,5 @@
 "The file was changed by another app after it was opened. To protect those changes, it was not overwritten. Reopen the file before editing it again." = "The file was changed by another app after it was opened. To protect those changes, it was not overwritten. Reopen the file before editing it again.";
 "The temporary PDF failed verification. The original file is unchanged." = "The temporary PDF failed verification. The original file is unchanged.";
 "Couldn’t finish writing the PDF. A verified copy of your changes was kept at %@." = "Couldn’t finish writing the PDF. A verified copy of your changes was kept at %@.";
+"Enter pages such as 1-3, 5 or 8-, between 1 and %ld." = "Enter pages such as 1-3, 5 or 8-, between 1 and %ld.";
+"The exported file couldn’t be written." = "The exported file couldn’t be written.";
