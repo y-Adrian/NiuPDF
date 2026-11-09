@@ -1,7 +1,19 @@
+import AppKit
 import SwiftUI
+
+/// Asks about unsaved annotations before the app quits.
+final class PaperplaneAppDelegate: NSObject, NSApplicationDelegate {
+    weak var library: ReaderLibrary?
+
+    @MainActor
+    func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
+        library?.confirmDiscardingUnsavedChanges() == false ? .terminateCancel : .terminateNow
+    }
+}
 
 @main
 struct PaperplaneApp: App {
+    @NSApplicationDelegateAdaptor private var appDelegate: PaperplaneAppDelegate
     @StateObject private var library = ReaderLibrary()
 
     var body: some Scene {
@@ -9,6 +21,7 @@ struct PaperplaneApp: App {
             ReaderWindow()
                 .environmentObject(library)
                 .frame(minWidth: 900, minHeight: 620)
+                .onAppear { appDelegate.library = library }
         }
         .windowStyle(.titleBar)
         .commands {

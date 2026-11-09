@@ -23,6 +23,11 @@ struct PDFCanvas: NSViewRepresentable {
         view.maxScaleFactor = 5
         view.displaysAsBook = library.layoutMode.displaysAsBook
         library.pdfView = view
+        library.onNoteCreated = { [weak view] note, page in
+            // Let the context menu finish dismissing before the popover appears.
+            DispatchQueue.main.async { view?.editNote(note, on: page) }
+        }
+        view.window?.isDocumentEdited = library.hasUnsavedChanges
         if let page = document.page(at: library.currentPageIndex) { view.go(to: page) }
         library.applyPendingRestoredZoom(to: view)
 
@@ -188,10 +193,114 @@ private final class MarkupColorSwatchButton: NSButton {
     }
 }
 
+/// Popover editor for a `/Text` note's contents. Text is committed when the
+/// popover closes, so clicking elsewhere keeps what was typed.
+private final class NoteEditorController: NSViewController, NSPopoverDelegate {
+    private let note: PDFAnnotation
+    private weak var library: ReaderLibrary?
+    private let textView = NSTextView()
+    private var isDeleted = false
+    weak var popover: NSPopover?
+
+    init(note: PDFAnnotation, library: ReaderLibrary) {
+        self.note = note
+        self.library = library
+        super.init(nibName: nil, bundle: nil)
+    }
+
+    required init?(coder: NSCoder) { nil }
+
+    override func loadView() {
+        let scrollView = NSScrollView(frame: NSRect(x: 0, y: 0, width: 260, height: 120))
+        scrollView.hasVerticalScroller = true
+        scrollView.borderType = .bezelBorder
+        textView.frame = NSRect(origin: .zero, size: scrollView.contentSize)
+        textView.minSize = NSSize(width: 0, height: scrollView.contentSize.height)
+        textView.maxSize = NSSize(width: CGFloat.greatestFiniteMagnitude, height: CGFloat.greatestFiniteMagnitude)
+        textView.isVerticallyResizable = true
+        textView.autoresizingMask = [.width]
+        textView.textContainer?.widthTracksTextView = true
+        textView.isRichText = false
+        textView.allowsUndo = true
+        textView.font = .systemFont(ofSize: 13)
+        textView.textContainerInset = NSSize(width: 4, height: 6)
+        textView.string = library?.noteContents(note) ?? ""
+        scrollView.documentView = textView
+
+        let deleteButton = NSButton(title: "删除笔记", target: self, action: #selector(deleteNote))
+        deleteButton.bezelStyle = .rounded
+        deleteButton.contentTintColor = .systemRed
+        let doneButton = NSButton(title: "完成", target: self, action: #selector(finish))
+        doneButton.bezelStyle = .rounded
+        // Plain Return inserts a line break in the note; ⌘Return finishes.
+        doneButton.keyEquivalent = "\r"
+        doneButton.keyEquivalentModifierMask = .command
+        doneButton.toolTip = "完成（⌘↩）"
+        let buttons = NSStackView(views: [deleteButton, NSView(), doneButton])
+        buttons.orientation = .horizontal
+
+        let stack = NSStackView(views: [scrollView, buttons])
+        stack.orientation = .vertical
+        stack.alignment = .leading
+        stack.spacing = 8
+        stack.edgeInsets = NSEdgeInsets(top: 10, left: 10, bottom: 10, right: 10)
+        scrollView.widthAnchor.constraint(equalToConstant: 260).isActive = true
+        scrollView.heightAnchor.constraint(equalToConstant: 120).isActive = true
+        buttons.widthAnchor.constraint(equalTo: scrollView.widthAnchor).isActive = true
+        view = stack
+    }
+
+    override func viewDidAppear() {
+        super.viewDidAppear()
+        view.window?.makeFirstResponder(textView)
+    }
+
+    @objc private func finish() { popover?.performClose(nil) }
+
+    @objc private func deleteNote() {
+        isDeleted = true
+        library?.deleteAnnotation(note)
+        popover?.performClose(nil)
+    }
+
+    func popoverWillClose(_ notification: Notification) {
+        guard !isDeleted else { return }
+        library?.setNoteContents(note, to: textView.string)
+    }
+}
+
 /// Adds native PDF text markup actions to the selected text's contextual menu.
 private final class MarkupPDFView: PDFView {
     weak var readerLibrary: ReaderLibrary?
     private var contextMenuSelection: PDFSelection?
+    private var notePopover: NSPopover?
+
+    /// Clicking a note opens its editor instead of starting a text selection.
+    override func mouseDown(with event: NSEvent) {
+        let viewPoint = convert(event.locationInWindow, from: nil)
+        if event.clickCount == 1,
+           let page = page(for: viewPoint, nearest: false),
+           let note = page.annotation(at: convert(viewPoint, to: page)),
+           note.type == "Text" {
+            editNote(note, on: page)
+            return
+        }
+        super.mouseDown(with: event)
+    }
+
+    func editNote(_ note: PDFAnnotation, on page: PDFPage) {
+        guard let readerLibrary, window != nil else { return }
+        notePopover?.close()
+        let controller = NoteEditorController(note: note, library: readerLibrary)
+        let popover = NSPopover()
+        popover.behavior = .transient
+        popover.contentViewController = controller
+        popover.delegate = controller
+        controller.popover = popover
+        notePopover = popover
+        let anchor = convert(note.bounds, from: page)
+        popover.show(relativeTo: anchor, of: self, preferredEdge: .maxY)
+    }
 
     override func menu(for event: NSEvent) -> NSMenu? {
         guard let selection = selectionForContextMenu(at: event),
@@ -353,6 +462,8 @@ private final class MarkupPDFView: PDFView {
 
 struct ThumbnailSidebar: View {
     let document: PDFDocument
+    /// Annotation revision; a change re-renders thumbnails so new markup shows.
+    let revision: Int
     @Binding var selectedIndex: Int
     let onSelect: (Int) -> Void
 
@@ -367,7 +478,7 @@ struct ThumbnailSidebar: View {
                                 onSelect(index)
                             } label: {
                                 VStack(spacing: 6) {
-                                    thumbnail(for: page, selected: selectedIndex == index)
+                                    thumbnail(for: page, selected: selectedIndex == index, revision: revision)
                                     Text("第 \(index + 1) 页")
                                         .font(.caption)
                                         .foregroundStyle(selectedIndex == index ? Color.accentColor : .secondary)
@@ -445,7 +556,7 @@ struct SearchResultsSidebar: View {
                                 Text("第 \(document.index(for: page) + 1) 页")
                                     .font(.caption.weight(.medium))
                                     .foregroundStyle(.secondary)
-                                Text(context(for: results[index], on: page))
+                                Text(context(forResultAt: index, on: page))
                                     .font(.system(size: 12))
                                     .foregroundStyle(.primary)
                                     .lineLimit(3)
@@ -466,16 +577,91 @@ struct SearchResultsSidebar: View {
         .background(Color(nsColor: .controlBackgroundColor))
     }
 
-    private func context(for selection: PDFSelection, on page: PDFPage) -> String {
-        guard let text = page.string, let needle = selection.string, !needle.isEmpty,
-              let range = text.range(of: needle, options: .caseInsensitive) else {
+    /// PDFSelection does not expose its text range, so locate the match by its
+    /// ordinal among this page's results; searching only for the first occurrence
+    /// gave every match on a page the same context.
+    private func context(forResultAt index: Int, on page: PDFPage) -> String {
+        let selection = results[index]
+        guard let text = page.string, let needle = selection.string, !needle.isEmpty else {
             return selection.string ?? "无法提取匹配文本"
         }
+        let ordinal = results[..<index].filter { $0.pages.first === page }.count
+        var searchStart = text.startIndex
+        var match: Range<String.Index>?
+        for _ in 0...ordinal {
+            guard let found = text.range(of: needle, options: .caseInsensitive, range: searchStart..<text.endIndex) else { break }
+            match = found
+            searchStart = found.upperBound
+        }
+        guard let range = match else { return needle }
         let start = text.index(range.lowerBound, offsetBy: -45, limitedBy: text.startIndex) ?? text.startIndex
         let end = text.index(range.upperBound, offsetBy: 45, limitedBy: text.endIndex) ?? text.endIndex
         return text[start..<end]
             .split(whereSeparator: \.isWhitespace)
             .joined(separator: " ")
+    }
+}
+
+struct AnnotationListSidebar: View {
+    let items: [AnnotationListItem]
+    let onSelect: (AnnotationListItem) -> Void
+    let onDelete: (AnnotationListItem) -> Void
+
+    var body: some View {
+        Group {
+            if items.isEmpty {
+                VStack(spacing: 8) {
+                    Image(systemName: "highlighter")
+                        .font(.title3)
+                        .foregroundStyle(.tertiary)
+                    Text("还没有批注")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    Text("选中文字后右键即可高亮、划线或添加笔记。")
+                        .font(.caption2)
+                        .foregroundStyle(.tertiary)
+                        .multilineTextAlignment(.center)
+                }
+                .padding(12)
+            } else {
+                ScrollView {
+                    LazyVStack(alignment: .leading, spacing: 6) {
+                        ForEach(items) { item in
+                            Button { onSelect(item) } label: { row(for: item) }
+                                .buttonStyle(.plain)
+                                .contextMenu {
+                                    Button("删除批注", role: .destructive) { onDelete(item) }
+                                }
+                        }
+                    }
+                    .padding(8)
+                }
+            }
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(Color(nsColor: .controlBackgroundColor))
+    }
+
+    private func row(for item: AnnotationListItem) -> some View {
+        HStack(alignment: .top, spacing: 8) {
+            Circle()
+                .fill(Color(nsColor: item.annotation.color.withAlphaComponent(1)))
+                .frame(width: 9, height: 9)
+                .padding(.top, 3)
+            VStack(alignment: .leading, spacing: 3) {
+                Text("\(item.kind) · 第 \(item.pageIndex + 1) 页")
+                    .font(.caption.weight(.medium))
+                    .foregroundStyle(.secondary)
+                Text(item.text.isEmpty ? "（无文字）" : item.text)
+                    .font(.system(size: 12))
+                    .foregroundStyle(item.text.isEmpty ? .tertiary : .primary)
+                    .lineLimit(3)
+                    .multilineTextAlignment(.leading)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .padding(8)
+        .contentShape(Rectangle())
     }
 }
 
@@ -521,11 +707,31 @@ private struct PDFOutlineEntry: View {
     }
 }
 
-private func thumbnail(for page: PDFPage, selected: Bool) -> some View {
-    let image = page.thumbnail(of: CGSize(width: 150, height: 190), for: .mediaBox)
+/// The sidebar re-renders on every library change (page turns, zoom steps), so
+/// rasterizing each visible page again every time made scrolling and zooming stutter.
+@MainActor
+private enum ThumbnailCache {
+    private static let images = NSCache<PDFPage, NSImage>()
+    private static var revision = -1
+
+    static func image(for page: PDFPage, revision: Int) -> NSImage {
+        if revision != self.revision {
+            images.removeAllObjects()
+            self.revision = revision
+        }
+        if let image = images.object(forKey: page) { return image }
+        let image = page.thumbnail(of: CGSize(width: 150, height: 190), for: .mediaBox)
+        images.setObject(image, forKey: page)
+        return image
+    }
+}
+
+@MainActor
+private func thumbnail(for page: PDFPage, selected: Bool, revision: Int) -> some View {
+    let image = ThumbnailCache.image(for: page, revision: revision)
     return Group {
-        if let data = image.tiffRepresentation, let nsImage = NSImage(data: data) {
-            Image(nsImage: nsImage)
+        if image.size.width > 0, image.size.height > 0 {
+            Image(nsImage: image)
                 .resizable()
                 .aspectRatio(contentMode: .fit)
         } else {

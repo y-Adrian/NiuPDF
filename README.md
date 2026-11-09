@@ -8,8 +8,11 @@ A small native macOS PDF reader built with SwiftUI and PDFKit. It takes inspirat
 - Navigate pages from the thumbnail sidebar or page number field
 - Search document text and move through matches
 - Zoom in and out
-- Highlight selected text
-- Save PDF annotations with `⌘S`
+- Highlight, underline and strike out selected text; add notes and edit them by clicking the note icon
+- Browse, jump to and delete annotations from the annotation list sidebar
+- Undo and redo annotation edits with `⌘Z` / `⇧⌘Z`
+- Open password-protected PDFs
+- Save PDF annotations with `⌘S`; unsaved changes are confirmed before opening another file or quitting
 
 ## Build and run
 

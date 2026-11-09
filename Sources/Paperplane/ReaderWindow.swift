@@ -18,6 +18,7 @@ struct ReaderWindow: View {
                             HStack(spacing: 2) {
                                 sidebarModeButton(.thumbnails, title: "缩略图", symbol: "square.grid.2x2")
                                 sidebarModeButton(.outline, title: "大纲", symbol: "list.bullet.indent")
+                                sidebarModeButton(.annotations, title: "批注", symbol: "highlighter")
                                 if !library.searchResults.isEmpty {
                                     sidebarModeButton(.searchResults, title: "结果", symbol: "text.magnifyingglass")
                                 }
@@ -26,13 +27,23 @@ struct ReaderWindow: View {
                             Divider()
                             switch library.sidebarMode {
                             case .thumbnails:
-                                ThumbnailSidebar(document: document, selectedIndex: $library.currentPageIndex) { index in
+                                ThumbnailSidebar(
+                                    document: document,
+                                    revision: library.annotationRevision,
+                                    selectedIndex: $library.currentPageIndex
+                                ) { index in
                                     library.goToPage(index + 1)
                                 }
                             case .outline:
                                 PDFOutlineSidebar(document: document) { index in
                                     library.goToPage(index + 1)
                                 }
+                            case .annotations:
+                                AnnotationListSidebar(
+                                    items: library.annotationListItems(),
+                                    onSelect: { library.reveal($0.annotation) },
+                                    onDelete: { library.deleteAnnotation($0.annotation) }
+                                )
                             case .searchResults:
                                 SearchResultsSidebar(
                                     results: library.searchResults,
@@ -154,6 +165,9 @@ struct ReaderWindow: View {
             Image(systemName: "doc.text")
             Text(library.displayName)
                 .lineLimit(1)
+            if library.hasUnsavedChanges {
+                Text("· 已编辑")
+            }
             Spacer()
             Text("\(Int(library.zoomScale * 100))%")
                 .monospacedDigit()
@@ -169,10 +183,13 @@ struct ReaderWindow: View {
         Button {
             library.sidebarMode = mode
         } label: {
-            Label(title, systemImage: symbol)
-                .font(.caption)
+            // Icon above the title so four tabs fit the 220 pt sidebar.
+            VStack(spacing: 2) {
+                Image(systemName: symbol)
+                Text(title).font(.system(size: 10))
+            }
                 .frame(maxWidth: .infinity)
-                .padding(.vertical, 5)
+                .padding(.vertical, 4)
                 .background(library.sidebarMode == mode ? Color.accentColor.opacity(0.14) : .clear,
                             in: RoundedRectangle(cornerRadius: 5))
         }

@@ -35,7 +35,18 @@ enum ReaderLayout: String, CaseIterable, Identifiable {
 enum SidebarMode {
     case thumbnails
     case outline
+    case annotations
     case searchResults
+}
+
+/// One row of the annotation list sidebar.
+struct AnnotationListItem: Identifiable {
+    let id: ObjectIdentifier
+    let annotation: PDFAnnotation
+    let page: PDFPage
+    let pageIndex: Int
+    let kind: String
+    let text: String
 }
 
 struct MarkupColor: Identifiable, Hashable {
@@ -88,6 +99,12 @@ final class ReaderLibrary: ObservableObject {
     @Published var isSidebarVisible = true
     @Published var sidebarMode: SidebarMode = .thumbnails
     @Published var errorMessage: String?
+    /// Bumped after every annotation edit, undo and redo so views that list or
+    /// render annotations (thumbnails, annotation list) refresh.
+    @Published private(set) var annotationRevision = 0
+    @Published private(set) var hasUnsavedChanges = false {
+        didSet { pdfView?.window?.isDocumentEdited = hasUnsavedChanges }
+    }
     @Published var layoutMode: ReaderLayout = ReaderLayout(
         rawValue: UserDefaults.standard.string(forKey: "readerLayoutMode") ?? ""
     ) ?? .continuous {
@@ -123,11 +140,20 @@ final class ReaderLibrary: ObservableObject {
             )
             open(url, restoringLastDocument: true)
         } catch {
+            forgetLastDocument()
             errorMessage = "无法恢复最近打开的 PDF。请重新选择文件。\n\(error.localizedDescription)"
         }
     }
 
+    /// A bookmark that cannot be restored would otherwise raise the same error on every launch.
+    private func forgetLastDocument() {
+        UserDefaults.standard.removeObject(forKey: ReadingStateKey.bookmark)
+        UserDefaults.standard.removeObject(forKey: ReadingStateKey.pageIndex)
+        UserDefaults.standard.removeObject(forKey: ReadingStateKey.zoomScale)
+    }
+
     func presentOpenPanel() {
+        guard confirmDiscardingUnsavedChanges() else { return }
         let panel = NSOpenPanel()
         panel.allowedContentTypes = [.pdf]
         panel.allowsMultipleSelection = false
@@ -139,7 +165,10 @@ final class ReaderLibrary: ObservableObject {
         }
     }
 
-    func open(_ url: URL) {
+    /// Opens a user-chosen file. The open panel asks about unsaved changes before
+    /// it is shown; drag and drop goes through `confirmDiscardingUnsavedChanges` here.
+    func open(_ url: URL, confirmingUnsavedChanges: Bool = true) {
+        if confirmingUnsavedChanges { guard confirmDiscardingUnsavedChanges() else { return } }
         open(url, restoringLastDocument: false)
     }
 
@@ -150,12 +179,23 @@ final class ReaderLibrary: ObservableObject {
             opened = try SafePDFFileStore.read(from: url)
         } catch {
             if didStartAccess { url.stopAccessingSecurityScopedResource() }
+            if restoringLastDocument { forgetLastDocument() }
             errorMessage = error.localizedDescription
             return
         }
 
+        if opened.document.isLocked, !unlock(opened.document, named: url.lastPathComponent) {
+            if didStartAccess { url.stopAccessingSecurityScopedResource() }
+            return
+        }
+
         if let scopedURL { scopedURL.stopAccessingSecurityScopedResource() }
-        if didStartAccess { scopedURL = url }
+        // Clear the reference when this URL needed no scope, so the previous URL is
+        // never stopped a second time on the next open.
+        scopedURL = didStartAccess ? url : nil
+        pdfView?.undoManager?.removeAllActions(withTarget: self)
+        hasUnsavedChanges = false
+        annotationRevision += 1
         document = opened.document
         fileURL = url
         fileRevision = opened.revision
@@ -177,6 +217,43 @@ final class ReaderLibrary: ObservableObject {
         searchResultIndex = 0
         errorMessage = nil
         persistSecurityScopedBookmark(for: url)
+    }
+
+    /// Asks for the user password of an encrypted PDF until it unlocks or the user cancels.
+    private func unlock(_ document: PDFDocument, named name: String) -> Bool {
+        var message = "“\(name)”受密码保护。请输入密码以打开。"
+        while true {
+            let alert = NSAlert()
+            alert.messageText = "输入文稿密码"
+            alert.informativeText = message
+            alert.addButton(withTitle: "打开")
+            alert.addButton(withTitle: "取消")
+            let field = NSSecureTextField(frame: NSRect(x: 0, y: 0, width: 240, height: 24))
+            alert.accessoryView = field
+            alert.window.initialFirstResponder = field
+            guard alert.runModal() == .alertFirstButtonReturn else { return false }
+            if document.unlock(withPassword: field.stringValue) { return true }
+            message = "密码不正确，请重试。"
+        }
+    }
+
+    /// Returns true when it is fine to replace or drop the current document.
+    func confirmDiscardingUnsavedChanges() -> Bool {
+        guard hasUnsavedChanges, document != nil else { return true }
+        let alert = NSAlert()
+        alert.messageText = "要存储对“\(displayName)”所做的更改吗？"
+        alert.informativeText = "如果不存储，你的批注更改将会丢失。"
+        alert.addButton(withTitle: "存储")
+        alert.addButton(withTitle: "取消")
+        alert.addButton(withTitle: "不存储")
+        switch alert.runModal() {
+        case .alertFirstButtonReturn:
+            return save()
+        case .alertThirdButtonReturn:
+            return true
+        default:
+            return false
+        }
     }
 
     func goToPage(_ oneBasedPage: Int) {
@@ -287,6 +364,7 @@ final class ReaderLibrary: ObservableObject {
             searchResults = []
             searchResultIndex = 0
             pdfView?.highlightedSelections = nil
+            leaveEmptySearchResultsSidebar()
             return
         }
         var options: NSString.CompareOptions = []
@@ -308,12 +386,20 @@ final class ReaderLibrary: ObservableObject {
             searchResults = []
             searchResultIndex = 0
             pdfView?.highlightedSelections = nil
+            leaveEmptySearchResultsSidebar()
             return
         }
         searchResults = document.findString(query, withOptions: options)
         searchResultIndex = 0
         pdfView?.highlightedSelections = searchResults
+        leaveEmptySearchResultsSidebar()
         showCurrentSearchResult()
+    }
+
+    /// The results tab button disappears with the last result, so the sidebar
+    /// must not stay on an empty results list the user can no longer leave by it.
+    private func leaveEmptySearchResultsSidebar() {
+        if searchResults.isEmpty, sidebarMode == .searchResults { sidebarMode = .thumbnails }
     }
 
     func moveSearchResult(_ delta: Int) {
@@ -397,8 +483,9 @@ final class ReaderLibrary: ObservableObject {
     }
 
     func removeNoteAnnotations(in selection: PDFSelection) {
-        removeAnnotations(ofType: .text, in: selection)
-        refreshPDFView()
+        recordAnnotationEdit("移除笔记", pages: selection.pages) {
+            for (note, page) in noteAnnotations(in: selection) { page.removeAnnotation(note) }
+        }
     }
 
     /// Creates a standards-compliant PDF `/Text` note. Keep these values together so
@@ -406,9 +493,8 @@ final class ReaderLibrary: ObservableObject {
     /// selection or persistence behavior.
     func toggleNoteAnnotation(in selection: PDFSelection) {
         if hasNoteAnnotation(in: selection) {
-            removeAnnotations(ofType: .text, in: selection)
+            removeNoteAnnotations(in: selection)
             pdfView?.clearSelection()
-            refreshPDFView()
             return
         }
 
@@ -418,20 +504,183 @@ final class ReaderLibrary: ObservableObject {
 
         let style = NoteAnnotationStyle()
         let noteBounds = style.bounds(for: selectionBounds, on: page)
-        let note = PDFAnnotation(bounds: noteBounds, forType: .text, withProperties: nil)
+        // Snap to whole page points so the icon's vector edges land on the pixel
+        // grid instead of a half pixel, which is what makes it look soft.
+        let alignedBounds = CGRect(
+            x: noteBounds.minX.rounded(),
+            y: noteBounds.minY.rounded(),
+            width: noteBounds.width,
+            height: noteBounds.height
+        )
+        // Use PDFKit's native text-note icon: PDFKit draws it as a vector at the
+        // current display scale, which stays sharp at every zoom level. Custom
+        // `draw` overrides are cached as a low-resolution appearance instead.
+        let note = PDFAnnotation(bounds: alignedBounds, forType: .text, withProperties: nil)
         note.iconType = .comment
         note.color = style.color.withAlphaComponent(style.opacity)
         let border = PDFBorder()
         border.lineWidth = style.borderWidth
         note.border = border
         note.contents = ""
-        page.addAnnotation(note)
+        // The icon sits beside the text, not on it, so remember which text it
+        // belongs to; otherwise "Remove Note" could never find it again.
+        note.setValue(Self.anchorString(for: selectionBounds), forAnnotationKey: Self.noteAnchorKey)
+        recordAnnotationEdit("添加笔记", pages: [page]) {
+            page.addAnnotation(note)
+        }
         pdfView?.clearSelection()
+        onNoteCreated?(note, page)
+    }
+
+    /// Set by the PDF view so a freshly created note opens its editor right away.
+    var onNoteCreated: ((PDFAnnotation, PDFPage) -> Void)?
+
+    func hasNoteAnnotation(in selection: PDFSelection) -> Bool {
+        !noteAnnotations(in: selection).isEmpty
+    }
+
+    /// Custom key holding the selected text's page rectangle as "x y w h". PDF
+    /// readers ignore unknown annotation keys, and PDFKit keeps it across saves.
+    private static let noteAnchorKey = PDFAnnotationKey(rawValue: "/PaperplaneAnchor")
+
+    private static func anchorString(for rect: CGRect) -> String {
+        [rect.minX, rect.minY, rect.width, rect.height].map { String(format: "%.2f", $0) }.joined(separator: " ")
+    }
+
+    private static func anchorRect(of note: PDFAnnotation) -> CGRect? {
+        guard let raw = note.value(forAnnotationKey: noteAnchorKey) as? String else { return nil }
+        let values = raw.split(separator: " ").compactMap { Double($0) }
+        guard values.count == 4 else { return nil }
+        return CGRect(x: values[0], y: values[1], width: values[2], height: values[3])
+    }
+
+    /// Notes created here match through their anchor; notes from other apps have
+    /// none, so they still match when the icon itself touches the selection.
+    private func noteAnnotations(in selection: PDFSelection) -> [(PDFAnnotation, PDFPage)] {
+        selection.pages.flatMap { page -> [(PDFAnnotation, PDFPage)] in
+            let bounds = selection.bounds(for: page)
+            return page.annotations
+                .filter { $0.type == Self.annotationTypeName(.text) }
+                .filter { (Self.anchorRect(of: $0) ?? $0.bounds).intersects(bounds) }
+                .map { ($0, page) }
+        }
+    }
+
+    func noteContents(_ note: PDFAnnotation) -> String {
+        note.contents ?? ""
+    }
+
+    func setNoteContents(_ note: PDFAnnotation, to text: String) {
+        let previous = note.contents ?? ""
+        guard previous != text else { return }
+        note.contents = text
+        pdfView?.undoManager?.registerUndo(withTarget: self) { target in
+            target.setNoteContents(note, to: previous)
+        }
+        pdfView?.undoManager?.setActionName("编辑笔记")
+        annotationsDidChange()
+    }
+
+    func deleteAnnotation(_ annotation: PDFAnnotation) {
+        guard let page = annotation.page else { return }
+        recordAnnotationEdit("删除批注", pages: [page]) {
+            page.removeAnnotation(annotation)
+        }
+    }
+
+    // MARK: - Edit tracking and undo
+
+    /// Runs an annotation mutation, then registers one undo step that restores
+    /// exactly the annotations it added or removed on the touched pages.
+    private func recordAnnotationEdit(_ actionName: String, pages: [PDFPage], _ body: () -> Void) {
+        let before = pages.map { Set($0.annotations.map(ObjectIdentifier.init)) }
+        let beforeAnnotations = pages.map(\.annotations)
+        body()
+        var added: [(PDFAnnotation, PDFPage)] = []
+        var removed: [(PDFAnnotation, PDFPage)] = []
+        for (index, page) in pages.enumerated() {
+            let after = Set(page.annotations.map(ObjectIdentifier.init))
+            added += page.annotations.filter { !before[index].contains(ObjectIdentifier($0)) }.map { ($0, page) }
+            removed += beforeAnnotations[index].filter { !after.contains(ObjectIdentifier($0)) }.map { ($0, page) }
+        }
+        guard !added.isEmpty || !removed.isEmpty else { return }
+        registerAnnotationUndo(added: added, removed: removed, actionName: actionName)
+        annotationsDidChange()
+    }
+
+    private func registerAnnotationUndo(
+        added: [(PDFAnnotation, PDFPage)],
+        removed: [(PDFAnnotation, PDFPage)],
+        actionName: String
+    ) {
+        guard let undoManager = pdfView?.undoManager else { return }
+        undoManager.registerUndo(withTarget: self) { target in
+            for (annotation, page) in added { page.removeAnnotation(annotation) }
+            for (annotation, page) in removed { page.addAnnotation(annotation) }
+            // Registering the inverse while undoing makes it the redo step.
+            target.registerAnnotationUndo(added: removed, removed: added, actionName: actionName)
+            target.annotationsDidChange()
+        }
+        undoManager.setActionName(actionName)
+    }
+
+    private func annotationsDidChange() {
+        hasUnsavedChanges = true
+        annotationRevision += 1
         refreshPDFView()
     }
 
-    func hasNoteAnnotation(in selection: PDFSelection) -> Bool {
-        return hasAnnotation(ofType: .text, in: selection)
+    private static func annotationTypeName(_ type: PDFAnnotationSubtype) -> String {
+        type.rawValue.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
+    }
+
+    // MARK: - Annotation list
+
+    private static let listedAnnotationKinds: [String: String] = [
+        "Highlight": "高亮",
+        "Underline": "下划线",
+        "StrikeOut": "删除线",
+        "Squiggly": "波浪线",
+        "Text": "笔记",
+        "FreeText": "文本框",
+        "Ink": "手绘",
+        "Square": "矩形",
+        "Circle": "椭圆",
+        "Line": "线条",
+        "Stamp": "图章"
+    ]
+
+    /// Every user-facing annotation in page order. Links, form widgets and popups are skipped.
+    func annotationListItems() -> [AnnotationListItem] {
+        guard let document else { return [] }
+        var items: [AnnotationListItem] = []
+        for index in 0..<document.pageCount {
+            guard let page = document.page(at: index) else { continue }
+            for annotation in page.annotations {
+                guard let type = annotation.type, let kind = Self.listedAnnotationKinds[type] else { continue }
+                let text: String
+                if type == "Text" || type == "FreeText" {
+                    text = annotation.contents ?? ""
+                } else {
+                    text = page.selection(for: annotation.bounds)?.string ?? annotation.contents ?? ""
+                }
+                items.append(AnnotationListItem(
+                    id: ObjectIdentifier(annotation),
+                    annotation: annotation,
+                    page: page,
+                    pageIndex: index,
+                    kind: kind,
+                    text: text.split(whereSeparator: \.isWhitespace).joined(separator: " ")
+                ))
+            }
+        }
+        return items
+    }
+
+    func reveal(_ annotation: PDFAnnotation) {
+        guard let page = annotation.page, let document, let pdfView else { return }
+        pdfView.go(to: annotation.bounds.insetBy(dx: -40, dy: -40), on: page)
+        updateCurrentPage(document.index(for: page))
     }
 
     private var selectedText: PDFSelection? {
@@ -446,25 +695,33 @@ final class ReaderLibrary: ObservableObject {
     }
 
     private func toggleTextMarkup(type: PDFAnnotationSubtype, color: NSColor, in selection: PDFSelection) {
-        let existing = annotations(ofType: type, in: selection)
-        if !existing.isEmpty {
-            removeAnnotations(ofType: type, in: selection)
-            if existing.allSatisfy({ colorsMatch($0.color, color) }) {
-                pdfView?.clearSelection()
-                refreshPDFView()
-                return
+        recordAnnotationEdit(markupActionName(type), pages: selection.pages) {
+            let existing = annotations(ofType: type, in: selection)
+            if !existing.isEmpty {
+                removeAnnotations(ofType: type, in: selection)
+                if existing.allSatisfy({ colorsMatch($0.color, color) }) { return }
             }
+            addTextMarkup(type: type, color: color, selection: selection)
         }
-        addTextMarkup(type: type, color: color, selection: selection)
         pdfView?.clearSelection()
         refreshPDFView()
     }
 
     private func replaceTextMarkup(type: PDFAnnotationSubtype, color: NSColor, selection: PDFSelection) {
-        removeMatchingAnnotations(ofType: type, in: selection)
-        addTextMarkup(type: type, color: color, selection: selection)
+        recordAnnotationEdit(markupActionName(type), pages: selection.pages) {
+            removeMatchingAnnotations(ofType: type, in: selection)
+            addTextMarkup(type: type, color: color, selection: selection)
+        }
         pdfView?.clearSelection()
         refreshPDFView()
+    }
+
+    private func markupActionName(_ type: PDFAnnotationSubtype) -> String {
+        switch type {
+        case .underline: "下划线"
+        case .strikeOut: "删除线"
+        default: "高亮"
+        }
     }
 
     /// Color swatches replace annotations created for the same selected line. Matching
@@ -560,41 +817,148 @@ final class ReaderLibrary: ObservableObject {
     }
 
     private struct NoteAnnotationStyle {
-        // PDF page-space points. Increase/decrease this to tune the rendered icon.
-        var iconSize: CGFloat = 14
-        // Keep the icon close to the selection, with a small gap and page inset.
-        var selectionGap: CGFloat = 2
-        var pageInset: CGFloat = 3
+        // PDF page-space points. PDFKit lays its native text-note icon out at 24 pt,
+        // and at that size the rect stays stable across save and reopen.
+        var iconSize: CGFloat = 24
+        // Gap kept between the icon and the text it is anchored to.
+        var anchorGap: CGFloat = 2
+        // Gap kept between two icons that share the same anchor line.
+        var stackGap: CGFloat = 2
+        var pageInset: CGFloat = 4
         // Applied to the standard note annotation color; 1 is fully opaque.
         var opacity: CGFloat = 1
         // A fine border keeps the small icon distinct without a heavy dark frame.
         var borderWidth: CGFloat = 0.6
         var color: NSColor = .systemYellow
 
+        private enum Axis {
+            case horizontal
+            case vertical
+        }
+
+        /// Places the note as close as possible to the selected text without
+        /// covering glyphs: first in the whitespace directly above the selected
+        /// line, then beside that line's end. Notes that share an anchor line are
+        /// shifted apart so their icons never overlap.
         func bounds(for selection: CGRect, on page: PDFPage) -> CGRect {
             let pageBounds = page.bounds(for: .mediaBox)
             let minX = pageBounds.minX + pageInset
             let maxX = pageBounds.maxX - iconSize - pageInset
-            // Place at the selection's upper-right, shifting inward only at a page edge.
-            let x = min(max(selection.maxX + selectionGap, minX), maxX)
             let minY = pageBounds.minY + pageInset
             let maxY = pageBounds.maxY - iconSize - pageInset
-            // Page coordinates increase upward: put the icon above the selection.
-            let y = min(max(selection.maxY + selectionGap, minY), maxY)
-            return CGRect(x: x, y: y, width: iconSize, height: iconSize)
+
+            let lines = pageLineBounds(on: page).sorted { $0.maxY > $1.maxY }
+            let anchorLine = lines.first(where: { $0.intersects(selection) }) ?? selection
+            let lineAbove = lines
+                .filter { $0.minY > anchorLine.maxY }
+                .min(by: { $0.minY < $1.minY })
+            let occupied = page.annotations
+                .filter { $0.type == noteType }
+                .map(\.bounds)
+
+            // 1) Directly above the selected line, inside the inter-line whitespace.
+            let ceiling = lineAbove?.minY ?? (pageBounds.maxY - pageInset)
+            if ceiling - anchorLine.maxY >= iconSize + 2 * anchorGap {
+                let base = CGRect(
+                    x: selection.midX - iconSize / 2,
+                    y: anchorLine.maxY + anchorGap,
+                    width: iconSize,
+                    height: iconSize
+                )
+                if let rect = resolve(base, axis: .horizontal, lines: lines, occupied: occupied, minX: minX, maxX: maxX, minY: minY, maxY: maxY) {
+                    return rect
+                }
+            }
+
+            // 2) Beside the selected line's end (right first, then left).
+            let rightBase = CGRect(
+                x: anchorLine.maxX + anchorGap,
+                y: anchorLine.midY - iconSize / 2,
+                width: iconSize,
+                height: iconSize
+            )
+            if let rect = resolve(rightBase, axis: .vertical, lines: lines, occupied: occupied, minX: minX, maxX: maxX, minY: minY, maxY: maxY) {
+                return rect
+            }
+            let leftBase = CGRect(
+                x: anchorLine.minX - anchorGap - iconSize,
+                y: anchorLine.midY - iconSize / 2,
+                width: iconSize,
+                height: iconSize
+            )
+            if let rect = resolve(leftBase, axis: .vertical, lines: lines, occupied: occupied, minX: minX, maxX: maxX, minY: minY, maxY: maxY) {
+                return rect
+            }
+
+            // 3) Best effort: beside the selection itself, clamped to the page.
+            return CGRect(
+                x: min(max(selection.maxX + anchorGap, minX), maxX),
+                y: min(max(selection.midY - iconSize / 2, minY), maxY),
+                width: iconSize,
+                height: iconSize
+            )
+        }
+
+        private func resolve(
+            _ base: CGRect,
+            axis: Axis,
+            lines: [CGRect],
+            occupied: [CGRect],
+            minX: CGFloat,
+            maxX: CGFloat,
+            minY: CGFloat,
+            maxY: CGFloat
+        ) -> CGRect? {
+            let step = iconSize + stackGap
+            let offsets: [CGFloat] = [0, step, -step, 2 * step, -2 * step, 3 * step, -3 * step, 4 * step, -4 * step, 5 * step, -5 * step]
+            for offset in offsets {
+                let candidate: CGRect
+                switch axis {
+                case .horizontal:
+                    candidate = CGRect(x: base.minX + offset, y: base.minY, width: iconSize, height: iconSize)
+                case .vertical:
+                    candidate = CGRect(x: base.minX, y: base.minY + offset, width: iconSize, height: iconSize)
+                }
+                let inPage = candidate.minX >= minX && candidate.minX <= maxX
+                    && candidate.minY >= minY && candidate.minY <= maxY
+                let coversText = lines.contains { $0.intersects(candidate) }
+                let overlapsNote = occupied.contains { $0.intersects(candidate) }
+                if inPage && !coversText && !overlapsNote {
+                    return candidate
+                }
+            }
+            return nil
+        }
+
+        private func pageLineBounds(on page: PDFPage) -> [CGRect] {
+            guard let text = page.string, !text.isEmpty else { return [] }
+            let range = NSRange(location: 0, length: (text as NSString).length)
+            guard let full = page.selection(for: range) else { return [] }
+            return full.selectionsByLine().compactMap { selection in
+                let bounds = selection.bounds(for: page)
+                return bounds.isNull || bounds.isEmpty ? nil : bounds
+            }
+        }
+
+        private var noteType: String {
+            PDFAnnotationSubtype.text.rawValue.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
         }
     }
 
-    func save() {
-        guard let document, let fileURL, let fileRevision else { return }
+    @discardableResult
+    func save() -> Bool {
+        guard let document, let fileURL, let fileRevision else { return false }
         do {
             self.fileRevision = try SafePDFFileStore.save(
                 document,
                 to: fileURL,
                 expectedRevision: fileRevision
             )
+            hasUnsavedChanges = false
+            return true
         } catch {
             errorMessage = error.localizedDescription
+            return false
         }
     }
 }
