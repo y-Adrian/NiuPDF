@@ -8,6 +8,10 @@ struct PDFCanvas: NSViewRepresentable {
     func makeNSView(context: Context) -> PDFView {
         let view = MarkupPDFView()
         view.readerLibrary = library
+        // PDFKit asks for page overlays only while it builds page views for a
+        // document, so the provider must be in place before the document is set.
+        view.overlayProvider.library = library
+        view.pageOverlayViewProvider = view.overlayProvider
         view.document = document
         view.autoScales = true
         view.displayMode = library.layoutMode.pdfDisplayMode
@@ -23,8 +27,6 @@ struct PDFCanvas: NSViewRepresentable {
         view.maxScaleFactor = 5
         view.displaysAsBook = library.layoutMode.displaysAsBook
         library.pdfView = view
-        view.overlayProvider.library = library
-        view.pageOverlayViewProvider = view.overlayProvider
         library.onEditAnnotation = { [weak view] annotation in
             // Let the context menu finish dismissing before the popover appears.
             DispatchQueue.main.async { view?.editAnnotation(annotation) }
