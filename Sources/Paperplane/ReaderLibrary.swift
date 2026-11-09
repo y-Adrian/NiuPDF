@@ -180,6 +180,11 @@ final class ReaderLibrary: ObservableObject {
     @Published private(set) var hasUnsavedChanges = false {
         didSet { pdfView?.window?.isDocumentEdited = hasUnsavedChanges }
     }
+    /// Edits since opening, counted down by undo and up by redo, so undoing back
+    /// to the saved state clears "edited". -1 marks a saved state that can no
+    /// longer be reached because a new edit replaced the steps that led to it.
+    private var changeCount = 0
+    private var savedChangeCount = 0
     @Published var layoutMode: ReaderLayout = ReaderLayout(
         rawValue: UserDefaults.standard.string(forKey: "readerLayoutMode") ?? ""
     ) ?? .continuous {
@@ -270,6 +275,8 @@ final class ReaderLibrary: ObservableObject {
         scopedURL = didStartAccess ? url : nil
         pdfView?.undoManager?.removeAllActions(withTarget: self)
         resetNoteIconState()
+        changeCount = 0
+        savedChangeCount = 0
         hasUnsavedChanges = false
         annotationRevision += 1
         // PDFKit builds its own note badges when it first lays out a page, before
@@ -441,40 +448,48 @@ final class ReaderLibrary: ObservableObject {
         }
     }
 
+    private var searchTask: Task<Void, Never>?
+
+    /// Searches page text with `NSRegularExpression`. PDFKit's `findString`
+    /// ignores `.regularExpression`, so regular-expression and whole-word
+    /// searches built on it never matched. The search runs in steps that
+    /// yield to the UI and is cancelled when the query changes.
     func find(_ text: String) {
         searchText = text
-        guard let document, !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
-            searchResults = []
-            searchResultIndex = 0
-            pdfView?.highlightedSelections = nil
-            leaveEmptySearchResultsSidebar()
+        searchTask?.cancel()
+        guard let document, let regex = searchExpression(for: text) else {
+            showSearchResults([])
             return
         }
-        var options: NSString.CompareOptions = []
-        if !isCaseSensitiveSearch { options.insert(.caseInsensitive) }
-        let query: String
-        if isRegularExpressionSearch {
-            query = isWholeWordSearch
-                ? "(?<![\\p{L}\\p{N}_])(?:\(text))(?![\\p{L}\\p{N}_])"
-                : text
-            options.insert(.regularExpression)
-        } else if isWholeWordSearch {
-            let escapedText = NSRegularExpression.escapedPattern(for: text)
-            query = "(?<![\\p{L}\\p{N}_])\(escapedText)(?![\\p{L}\\p{N}_])"
-            options.insert(.regularExpression)
-        } else {
-            query = text
+        searchTask = Task { @MainActor [weak self] in
+            var results: [PDFSelection] = []
+            for index in 0..<document.pageCount {
+                guard !Task.isCancelled else { return }
+                guard let page = document.page(at: index), let string = page.string else { continue }
+                let range = NSRange(location: 0, length: (string as NSString).length)
+                for match in regex.matches(in: string, range: range) where match.range.length > 0 {
+                    if let selection = page.selection(for: match.range) { results.append(selection) }
+                }
+                if index % 25 == 24 { await Task.yield() }
+            }
+            guard !Task.isCancelled else { return }
+            self?.showSearchResults(results)
         }
-        if options.contains(.regularExpression), (try? NSRegularExpression(pattern: query)) == nil {
-            searchResults = []
-            searchResultIndex = 0
-            pdfView?.highlightedSelections = nil
-            leaveEmptySearchResultsSidebar()
-            return
+    }
+
+    private func searchExpression(for text: String) -> NSRegularExpression? {
+        guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return nil }
+        var pattern = isRegularExpressionSearch ? text : NSRegularExpression.escapedPattern(for: text)
+        if isWholeWordSearch {
+            pattern = "(?<![\\p{L}\\p{N}_])(?:\(pattern))(?![\\p{L}\\p{N}_])"
         }
-        searchResults = document.findString(query, withOptions: options)
+        return try? NSRegularExpression(pattern: pattern, options: isCaseSensitiveSearch ? [] : [.caseInsensitive])
+    }
+
+    private func showSearchResults(_ results: [PDFSelection]) {
+        searchResults = results
         searchResultIndex = 0
-        pdfView?.highlightedSelections = searchResults
+        pdfView?.highlightedSelections = results.isEmpty ? nil : results
         leaveEmptySearchResultsSidebar()
         showCurrentSearchResult()
     }
@@ -722,8 +737,8 @@ final class ReaderLibrary: ObservableObject {
         default: break
         }
         if pendingCreation?.annotation === annotation {
-            // Part of the not-yet-committed "Add Note" step.
-            annotation.color = color.nsColor
+            // Part of a creation step that is not committed yet.
+            applyDisplayColor(color.nsColor, to: annotation)
             annotationRevision += 1
             refreshPDFView()
             return
@@ -734,12 +749,7 @@ final class ReaderLibrary: ObservableObject {
     private func setColor(_ annotation: PDFAnnotation, to color: NSColor) {
         let previous = displayColor(of: annotation)
         guard !colorsMatch(previous, color) else { return }
-        if annotation.type == "FreeText" {
-            annotation.fontColor = color
-            Self.stampTextStyle(of: annotation)
-        } else {
-            annotation.color = color
-        }
+        applyDisplayColor(color, to: annotation)
         pdfView?.undoManager?.registerUndo(withTarget: self) { target in
             target.setColor(annotation, to: previous)
         }
@@ -987,6 +997,15 @@ final class ReaderLibrary: ObservableObject {
         annotation.type == "FreeText" ? (annotation.fontColor ?? .black) : annotation.color
     }
 
+    private func applyDisplayColor(_ color: NSColor, to annotation: PDFAnnotation) {
+        if annotation.type == "FreeText" {
+            annotation.fontColor = color
+            Self.stampTextStyle(of: annotation)
+        } else {
+            annotation.color = color
+        }
+    }
+
     // MARK: - Note icons
 
     /// Annotations whose PDFKit rendering is hidden on screen because the page
@@ -1081,13 +1100,18 @@ final class ReaderLibrary: ObservableObject {
         }
     }
 
-    /// Restores what `prepareNotes` changed so the saved file is standard.
+    /// Restores what `prepareNotes` changed so the saved file is standard, and
+    /// leaves out an annotation still waiting for its text (a note being written
+    /// in its popover), which is not part of the document yet.
     private func withNativeNotesRestored<T>(_ body: () throws -> T) rethrows -> T {
+        let pending = pendingCreation?.edit
+        pending?.revert()
         for note in hiddenNativeAnnotations.values { note.shouldDisplay = true }
         for (annotation, text) in markupNotes.values { annotation.contents = text.isEmpty ? nil : text }
         defer {
             for note in hiddenNativeAnnotations.values { note.shouldDisplay = false }
             for (annotation, _) in markupNotes.values { annotation.contents = nil }
+            pending?.apply()
         }
         return try body()
     }
@@ -1125,6 +1149,11 @@ final class ReaderLibrary: ObservableObject {
         func revert() {
             for (annotation, page) in added { page.removeAnnotation(annotation) }
             for (annotation, page) in removed { page.addAnnotation(annotation) }
+        }
+
+        func apply() {
+            for (annotation, page) in removed { page.removeAnnotation(annotation) }
+            for (annotation, page) in added { page.addAnnotation(annotation) }
         }
     }
 
@@ -1166,7 +1195,15 @@ final class ReaderLibrary: ObservableObject {
     }
 
     private func annotationsDidChange() {
-        hasUnsavedChanges = true
+        if pdfView?.undoManager?.isUndoing == true {
+            changeCount -= 1
+        } else if pdfView?.undoManager?.isRedoing == true {
+            changeCount += 1
+        } else {
+            if changeCount < savedChangeCount { savedChangeCount = -1 }
+            changeCount += 1
+        }
+        hasUnsavedChanges = changeCount != savedChangeCount
         annotationRevision += 1
         refreshPDFView()
     }
@@ -1192,9 +1229,21 @@ final class ReaderLibrary: ObservableObject {
         "Stamp": L("Stamp")
     ]
 
-    /// Every user-facing annotation in page order. Links, form widgets and popups are skipped.
+    private var annotationListCache: (revision: Int, document: ObjectIdentifier, items: [AnnotationListItem])?
+
+    /// Every user-facing annotation in page order. Links, form widgets and popups
+    /// are skipped. Cached per edit, since SwiftUI asks again on every redraw.
     func annotationListItems() -> [AnnotationListItem] {
         guard let document else { return [] }
+        if let cache = annotationListCache, cache.revision == annotationRevision, cache.document == ObjectIdentifier(document) {
+            return cache.items
+        }
+        let items = buildAnnotationListItems(in: document)
+        annotationListCache = (annotationRevision, ObjectIdentifier(document), items)
+        return items
+    }
+
+    private func buildAnnotationListItems(in document: PDFDocument) -> [AnnotationListItem] {
         var items: [AnnotationListItem] = []
         for index in 0..<document.pageCount {
             guard let page = document.page(at: index) else { continue }
@@ -1240,6 +1289,7 @@ final class ReaderLibrary: ObservableObject {
             self.fileRevision = try withNativeNotesRestored {
                 try SafePDFFileStore.save(document, to: fileURL, expectedRevision: fileRevision)
             }
+            savedChangeCount = changeCount
             hasUnsavedChanges = false
             return true
         } catch {

@@ -26,6 +26,7 @@ public enum SafePDFFileStoreError: LocalizedError, Equatable {
     case externallyChanged
     case unableToWriteTemporary
     case invalidTemporaryCopy
+    case inPlaceWriteFailed(keptCopy: String)
     case coordinationFailed(String)
 
     public var errorDescription: String? {
@@ -38,13 +39,19 @@ public enum SafePDFFileStoreError: LocalizedError, Equatable {
             return L("Couldn’t write a temporary PDF. The original file is unchanged.")
         case .invalidTemporaryCopy:
             return L("The temporary PDF failed verification. The original file is unchanged.")
+        case let .inPlaceWriteFailed(keptCopy):
+            return L("Couldn’t finish writing the PDF. A verified copy of your changes was kept at %@.", keptCopy)
         case let .coordinationFailed(message):
             return L("Couldn’t safely coordinate file access: %@", message)
         }
     }
 }
 
-/// File coordination, revision checking, and verified same-directory replacement.
+/// File coordination, revision checking, and verified replacement. A copy is
+/// written and reopened before the original is touched. When the folder is
+/// writable the copy sits beside the original and replaces it atomically; the
+/// App Sandbox grants access to the chosen file only, so otherwise the copy is
+/// made in the app's temporary folder and written over the original in place.
 /// Callers keep the security-scoped URL access alive for the full operation.
 public enum SafePDFFileStore {
     public static func read(from url: URL) throws -> (document: PDFDocument, revision: PDFFileRevision) {
@@ -91,10 +98,14 @@ public enum SafePDFFileStore {
                     throw SafePDFFileStoreError.externallyChanged
                 }
 
-                let candidate = coordinatedURL.deletingLastPathComponent()
+                let beside = coordinatedURL.deletingLastPathComponent()
                     .appendingPathComponent(".\(coordinatedURL.lastPathComponent).paperplane-\(UUID().uuidString).tmp.pdf")
+                let replacesAtomically = document.write(to: beside)
+                let candidate = replacesAtomically
+                    ? beside
+                    : FileManager.default.temporaryDirectory.appendingPathComponent("paperplane-\(UUID().uuidString).pdf")
                 temporaryURL = candidate
-                guard document.write(to: candidate) else {
+                guard replacesAtomically || document.write(to: candidate) else {
                     throw SafePDFFileStoreError.unableToWriteTemporary
                 }
                 guard let reopened = PDFDocument(url: candidate),
@@ -107,7 +118,18 @@ public enum SafePDFFileStore {
                 guard try PDFFileRevision(url: coordinatedURL) == expectedRevision else {
                     throw SafePDFFileStoreError.externallyChanged
                 }
-                _ = try FileManager.default.replaceItemAt(coordinatedURL, withItemAt: candidate)
+                if replacesAtomically {
+                    _ = try FileManager.default.replaceItemAt(coordinatedURL, withItemAt: candidate)
+                } else {
+                    do {
+                        try overwrite(coordinatedURL, withContentsOf: candidate)
+                    } catch {
+                        // The original may be partly written; keep the verified copy.
+                        temporaryURL = nil
+                        throw SafePDFFileStoreError.inPlaceWriteFailed(keptCopy: candidate.path)
+                    }
+                    try? FileManager.default.removeItem(at: candidate)
+                }
                 temporaryURL = nil
                 updatedRevision = try PDFFileRevision(url: coordinatedURL)
             } catch {
@@ -122,5 +144,14 @@ public enum SafePDFFileStore {
         if let operationError { throw operationError }
         guard let updatedRevision else { throw SafePDFFileStoreError.unreadablePDF }
         return updatedRevision
+    }
+
+    private static func overwrite(_ url: URL, withContentsOf source: URL) throws {
+        let data = try Data(contentsOf: source)
+        let handle = try FileHandle(forWritingTo: url)
+        defer { try? handle.close() }
+        try handle.truncate(atOffset: 0)
+        try handle.write(contentsOf: data)
+        try handle.synchronize()
     }
 }

@@ -48,6 +48,27 @@ final class SafePDFFileStoreTests: XCTestCase {
         XCTAssertEqual(try Data(contentsOf: target), outsideChange)
     }
 
+    /// The App Sandbox grants access to the file the user chose, not to its
+    /// folder; a read-only folder around a writable file reproduces that.
+    func testSaveWorksWhenOnlyTheFileIsWritable() throws {
+        let folder = temporaryDirectory.appendingPathComponent("file-only-access", isDirectory: true)
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        let target = folder.appendingPathComponent("copy.pdf")
+        try FileManager.default.copyItem(at: fixture("existing-annotation.pdf"), to: target)
+        let (document, revision) = try SafePDFFileStore.read(from: target)
+        let marker = PDFAnnotation(bounds: CGRect(x: 60, y: 60, width: 50, height: 15), forType: .underline, withProperties: nil)
+        document.page(at: 0)?.addAnnotation(marker)
+        try FileManager.default.setAttributes([.posixPermissions: 0o555], ofItemAtPath: folder.path)
+        defer { try? FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: folder.path) }
+
+        let newRevision = try SafePDFFileStore.save(document, to: target, expectedRevision: revision)
+
+        let reopened = try XCTUnwrap(PDFDocument(url: target))
+        XCTAssertEqual(reopened.page(at: 0)?.annotations.filter { $0.type == "Underline" }.count, 1)
+        XCTAssertEqual(try FileManager.default.contentsOfDirectory(atPath: folder.path), ["copy.pdf"], "No temporary file may be left behind.")
+        XCTAssertEqual(try PDFFileRevision(url: target), newRevision)
+    }
+
     private func fixture(_ name: String) -> URL {
         URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
             .appendingPathComponent("TestCorpus/fixtures/\(name)")
