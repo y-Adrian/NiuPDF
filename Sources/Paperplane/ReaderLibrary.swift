@@ -781,6 +781,41 @@ final class ReaderLibrary: ObservableObject {
         }
     }
 
+    /// Text selected in the PDF view, if any.
+    private var selectedText: PDFSelection? {
+        guard let selection = pdfView?.currentSelection,
+              !(selection.string ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return nil }
+        return selection
+    }
+
+    /// A toolbar tool button. A markup tool marks text that is already selected
+    /// right away, as the context menu does, and stays active for further
+    /// drags. Otherwise the button turns the tool on, or off when it is active.
+    func chooseTool(_ tool: AnnotationTool) {
+        if tool.marksText, let selection = selectedText {
+            switch tool {
+            case .underline: toggleUnderline(in: selection)
+            case .strikeOut: toggleStrikeOut(in: selection)
+            default: toggleHighlight(in: selection)
+            }
+            activeTool = tool
+            return
+        }
+        activeTool = activeTool == tool ? .select : tool
+    }
+
+    /// A toolbar color dot: sets the tool's color, and with a markup tool marks
+    /// selected text in that color, as the context menu's colors do.
+    func chooseColor(_ color: MarkupColor, for tool: AnnotationTool) {
+        setColor(color, for: tool)
+        guard tool.marksText, let selection = selectedText else { return }
+        switch tool {
+        case .underline: applyUnderline(color: color, to: selection)
+        case .strikeOut: applyStrikeOut(color: color, to: selection)
+        default: applyHighlight(color: color, to: selection)
+        }
+    }
+
     /// Marks text selected while a markup tool is active.
     func applyActiveTool(to selection: PDFSelection) {
         switch activeTool {

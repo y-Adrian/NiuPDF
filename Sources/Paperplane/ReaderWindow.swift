@@ -469,7 +469,7 @@ private struct AnnotationToolBar: View {
         let current = library.color(for: hasColor ? tool : .highlight)
         return HStack(spacing: 6) {
             ForEach(palette) { color in
-                Button { library.setColor(color, for: tool) } label: {
+                Button { library.chooseColor(color, for: tool) } label: {
                     swatch(color, isSelected: hasColor && color == current)
                 }
                 .buttonStyle(.plain)
@@ -517,7 +517,7 @@ private struct AnnotationToolBar: View {
     }
 
     private func toggle(_ tool: AnnotationTool) {
-        library.activeTool = library.activeTool == tool ? .select : tool
+        library.chooseTool(tool)
     }
 
     private func pick(_ shape: AnnotationTool) {

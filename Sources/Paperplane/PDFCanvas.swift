@@ -111,7 +111,7 @@ private final class MarkupToolIconButton: NSButton {
 
     required init?(coder: NSCoder) { nil }
 
-    override var intrinsicContentSize: NSSize { NSSize(width: 26, height: 26) }
+    override var intrinsicContentSize: NSSize { NSSize(width: 24, height: 24) }
 
     func setSelectedTool(_ selected: Bool) {
         guard isSelectedTool != selected else { return }
@@ -156,7 +156,7 @@ private final class MarkupColorSwatchButton: NSButton {
 
     required init?(coder: NSCoder) { nil }
 
-    override var intrinsicContentSize: NSSize { NSSize(width: 24, height: 24) }
+    override var intrinsicContentSize: NSSize { NSSize(width: 20, height: 22) }
 
     func setSelectedColor(_ selected: Bool) {
         guard isSelectedColor != selected else { return }
@@ -173,7 +173,7 @@ private final class MarkupColorSwatchButton: NSButton {
             NSGraphicsContext.saveGraphicsState()
             shadow.set()
             NSColor.black.withAlphaComponent(0.55).setFill()
-            let diameter = max(0, min(bounds.width, bounds.height) - 10)
+            let diameter = max(0, min(bounds.width, bounds.height) - 6)
             let circle = CGRect(
                 x: bounds.midX - diameter / 2,
                 y: bounds.midY - diameter / 2,
@@ -205,7 +205,8 @@ private final class MarkupPDFView: PDFView, AnnotationOverlayHost {
 
     func toolDidChange() {
         toolHandler.toolDidChange()
-        clearSelection()
+        // Keep selected text for the markup tools, which can mark it.
+        if readerLibrary?.activeTool.marksText != true { clearSelection() }
         window?.invalidateCursorRects(for: self)
     }
 
@@ -220,7 +221,23 @@ private final class MarkupPDFView: PDFView, AnnotationOverlayHost {
         pendingMarkupClick = tool == .select && event.clickCount == 1 ? markup(at: event) : nil
         awaitsToolSelection = tool.marksText
         super.mouseDown(with: event)
-        if NSEvent.pressedMouseButtons & 1 == 0 { resolveClick() }
+        if mouseUpAlreadyHandled() {
+            resolveClick()
+        } else if awaitsToolSelection {
+            // The button state can lag right after PDFView's own drag tracking
+            // returns; check again next turn in case no mouseUp follows.
+            DispatchQueue.main.async { [weak self] in
+                if self?.mouseUpAlreadyHandled() == true { self?.resolveClick() }
+            }
+        }
+    }
+
+    /// True when PDFView tracked the whole drag inside `mouseDown`: the button is
+    /// up and no mouse-up is left for `mouseUp` to receive.
+    private func mouseUpAlreadyHandled() -> Bool {
+        guard NSEvent.pressedMouseButtons & 1 == 0 else { return false }
+        let pending = NSApp.nextEvent(matching: .leftMouseUp, until: Date.distantPast, inMode: .default, dequeue: false)
+        return pending == nil
     }
 
     override func mouseDragged(with event: NSEvent) {
@@ -385,8 +402,8 @@ private final class MarkupPDFView: PDFView, AnnotationOverlayHost {
         stack.orientation = .horizontal
         stack.alignment = .centerY
         stack.distribution = .fill
-        stack.spacing = 4
-        stack.edgeInsets = NSEdgeInsets(top: 3, left: 10, bottom: 3, right: 10)
+        stack.spacing = 2
+        stack.edgeInsets = NSEdgeInsets(top: 3, left: 12, bottom: 3, right: 12)
         stack.setContentHuggingPriority(.required, for: .horizontal)
 
         menuToolButtons = Self.menuMarkupTools.enumerated().map { index, tool in
@@ -398,7 +415,7 @@ private final class MarkupPDFView: PDFView, AnnotationOverlayHost {
         }
         menuToolButtons.forEach(stack.addArrangedSubview)
         // A wider gap separates the tools from their colors.
-        if let last = menuToolButtons.last { stack.setCustomSpacing(12, after: last) }
+        if let last = menuToolButtons.last { stack.setCustomSpacing(10, after: last) }
 
         let current = readerLibrary?.color(for: menuMarkupTool) ?? .yellow
         menuSwatches = MarkupColor.allCases.enumerated().map { index, color in
@@ -411,11 +428,18 @@ private final class MarkupPDFView: PDFView, AnnotationOverlayHost {
         }
         menuSwatches.forEach(stack.addArrangedSubview)
 
-        let toolWidth = CGFloat(menuToolButtons.count * 26 + (menuToolButtons.count - 1) * 4)
-        let colorWidth = CGFloat(menuSwatches.count * 24 + (menuSwatches.count - 1) * 4)
-        stack.frame = NSRect(x: 0, y: 0, width: toolWidth + 12 + colorWidth + 20, height: 32)
+        // The menu widens its item views to its own width; keep the row at its
+        // natural size against the leading edge instead of spreading it out.
+        let size = stack.fittingSize
+        let container = NSView(frame: NSRect(x: 0, y: 0, width: size.width, height: size.height))
+        stack.translatesAutoresizingMaskIntoConstraints = false
+        container.addSubview(stack)
+        NSLayoutConstraint.activate([
+            stack.leadingAnchor.constraint(equalTo: container.leadingAnchor),
+            stack.centerYAnchor.constraint(equalTo: container.centerYAnchor)
+        ])
         let item = NSMenuItem()
-        item.view = stack
+        item.view = container
         return item
     }
 
