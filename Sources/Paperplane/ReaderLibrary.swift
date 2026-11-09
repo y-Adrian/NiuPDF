@@ -156,6 +156,13 @@ final class ReaderLibrary: ObservableObject {
     @Published var selectedStrikeOutColor: MarkupColor = .yellow
     /// Color for text boxes, drawings and shapes.
     @Published var drawingColor: MarkupColor = .red
+    /// Line width for new drawings and shapes, in page points.
+    @Published var strokeWidth: CGFloat = 2
+    /// Font family for new text boxes; nil is the system font.
+    @Published var textFontFamily: String?
+    @Published var textFontSize: CGFloat = 14
+    /// Set by the text box editor so style changes reach the box being typed.
+    var onTypingStyleChange: (() -> Void)?
     /// The markup tool last applied, which the context menu's colors apply to.
     var lastMarkupTool: AnnotationTool = .highlight
     @Published var activeTool: AnnotationTool = .select {
@@ -818,6 +825,10 @@ final class ReaderLibrary: ObservableObject {
     /// selected text in that color, as the context menu's colors do.
     func chooseColor(_ color: MarkupColor, for tool: AnnotationTool) {
         setColor(color, for: tool)
+        if tool == .textBox, let box = annotationBeingTyped {
+            setColor(box, to: color)
+            onTypingStyleChange?()
+        }
         guard tool.marksText, let selection = selectedText else { return }
         switch tool {
         case .underline: applyUnderline(color: color, to: selection)
@@ -858,11 +869,29 @@ final class ReaderLibrary: ObservableObject {
 
     static let textBoxFontSize: CGFloat = 14
     static let textBoxWidth: CGFloat = 180
+    static let strokeWidths: [CGFloat] = [1, 2, 3, 5, 8]
+    static let fontSizes: [CGFloat] = [9, 10, 12, 14, 16, 18, 20, 24, 28, 32, 40, 48]
+
+    /// A regular font of a family, or the system font when the family is nil
+    /// or not installed.
+    static func font(family: String?, size: CGFloat) -> NSFont {
+        guard let family,
+              let font = NSFontManager.shared.font(withFamily: family, traits: [], weight: 5, size: size) else {
+            return .systemFont(ofSize: size)
+        }
+        return font
+    }
+
+    /// The family a text box uses, or nil for the system font.
+    static func fontFamily(of box: PDFAnnotation) -> String? {
+        guard let font = box.font, !font.fontName.hasPrefix(".") else { return nil }
+        return font.familyName
+    }
 
     /// Adds an empty text box whose top-left corner is at a page point. It is
     /// kept only if `finishTextBox` gives it text.
     func beginTextBox(at point: CGPoint, on page: PDFPage) -> PDFAnnotation {
-        let font = NSFont.systemFont(ofSize: Self.textBoxFontSize)
+        let font = Self.font(family: textFontFamily, size: textFontSize)
         let height = ceil(font.ascender - font.descender + font.leading) + 6
         let box = PDFAnnotation(
             bounds: CGRect(x: point.x, y: point.y - height, width: Self.textBoxWidth, height: height),
@@ -921,20 +950,18 @@ final class ReaderLibrary: ObservableObject {
         annotationsDidChange()
     }
 
-    static let strokeWidth: CGFloat = 2
-
     /// Adds a freehand drawing through page points.
     func addInk(through points: [CGPoint], on page: PDFPage) {
         guard points.count > 1 else { return }
         let path = NSBezierPath()
         path.move(to: points[0])
         for point in points.dropFirst() { path.line(to: point) }
-        let bounds = path.bounds.insetBy(dx: -Self.strokeWidth * 2, dy: -Self.strokeWidth * 2)
+        let bounds = path.bounds.insetBy(dx: -strokeWidth * 2, dy: -strokeWidth * 2)
         // Ink paths are relative to the annotation's origin.
         let local = NSBezierPath()
         local.move(to: CGPoint(x: points[0].x - bounds.minX, y: points[0].y - bounds.minY))
         for point in points.dropFirst() { local.line(to: CGPoint(x: point.x - bounds.minX, y: point.y - bounds.minY)) }
-        local.lineWidth = Self.strokeWidth
+        local.lineWidth = strokeWidth
         local.lineCapStyle = .round
         local.lineJoinStyle = .round
         let ink = PDFAnnotation(bounds: bounds, forType: .ink, withProperties: nil)
@@ -970,9 +997,62 @@ final class ReaderLibrary: ObservableObject {
     }
 
     private func strokeBorder() -> PDFBorder {
+        Self.border(width: strokeWidth)
+    }
+
+    private static func border(width: CGFloat) -> PDFBorder {
         let border = PDFBorder()
-        border.lineWidth = Self.strokeWidth
+        border.lineWidth = width
         return border
+    }
+
+    // MARK: - Line width and fonts
+
+    /// Toolbar line width: the default for new drawings and shapes.
+    func chooseStrokeWidth(_ width: CGFloat) {
+        strokeWidth = width
+    }
+
+    /// Toolbar font family or size: the default for new text boxes, also
+    /// applied to the text box being typed.
+    func chooseTextFont(family: String?, size: CGFloat) {
+        textFontFamily = family
+        textFontSize = size
+        if let box = annotationBeingTyped {
+            setFont(of: box, family: family, size: size)
+            onTypingStyleChange?()
+        }
+    }
+
+    func setStrokeWidth(_ annotation: PDFAnnotation, to width: CGFloat) {
+        let previous = annotation.border?.lineWidth ?? 1
+        guard abs(previous - width) > 0.01 else { return }
+        strokeWidth = width
+        annotation.border = Self.border(width: width)
+        pdfView?.undoManager?.registerUndo(withTarget: self) { target in
+            target.setStrokeWidth(annotation, to: previous)
+        }
+        pdfView?.undoManager?.setActionName(L("Change Line Width"))
+        annotationsDidChange()
+    }
+
+    func setFont(of box: PDFAnnotation, family: String?, size: CGFloat) {
+        let previous = (family: Self.fontFamily(of: box), size: box.font?.pointSize ?? Self.textBoxFontSize)
+        guard previous.family != family || abs(previous.size - size) > 0.01 else { return }
+        textFontFamily = family
+        textFontSize = size
+        box.font = Self.font(family: family, size: size)
+        Self.stampTextStyle(of: box)
+        if pendingCreation?.annotation === box {
+            // Part of a creation step that is not committed yet.
+            refreshPDFView()
+            return
+        }
+        pdfView?.undoManager?.registerUndo(withTarget: self) { target in
+            target.setFont(of: box, family: previous.family, size: previous.size)
+        }
+        pdfView?.undoManager?.setActionName(L("Change Font"))
+        annotationsDidChange()
     }
 
     /// Annotations the select tool can drag to a new place.
@@ -1037,24 +1117,30 @@ final class ReaderLibrary: ObservableObject {
 
     /// PDFKit writes a text box's font and color only into its appearance
     /// stream, which other readers show correctly, but reads the box back as
-    /// black 12 pt Helvetica. Text boxes made here also keep "size r g b a"
-    /// under this key, restored when the document opens.
+    /// black 12 pt Helvetica with a 1 pt border. Text boxes made here also keep
+    /// "size r g b a font" (a PostScript name, or "system") under this key,
+    /// restored when the document opens.
     private static let textStyleKey = PDFAnnotationKey(rawValue: "/PaperplaneTextStyle")
 
     private static func stampTextStyle(of box: PDFAnnotation) {
         let size = box.font?.pointSize ?? textBoxFontSize
         let color = (box.fontColor ?? .black).usingColorSpace(.deviceRGB) ?? .black
         let values = [size, color.redComponent, color.greenComponent, color.blueComponent, color.alphaComponent]
-        box.setValue(values.map { String(format: "%.3f", $0) }.joined(separator: " "), forAnnotationKey: textStyleKey)
+        let fontName = fontFamily(of: box) == nil ? "system" : (box.font?.fontName ?? "system")
+        let style = values.map { String(format: "%.3f", $0) } + [fontName]
+        box.setValue(style.joined(separator: " "), forAnnotationKey: textStyleKey)
     }
 
     /// Restores a stamped text style; false for text boxes from other apps.
     private static func restoreTextStyle(of box: PDFAnnotation) -> Bool {
         guard let raw = box.value(forAnnotationKey: textStyleKey) as? String else { return false }
-        let values = raw.split(separator: " ").compactMap { Double($0) }.map { CGFloat($0) }
+        let tokens = raw.split(separator: " ").map(String.init)
+        let values = tokens.prefix(5).compactMap { Double($0) }.map { CGFloat($0) }
         guard values.count == 5 else { return false }
-        box.font = .systemFont(ofSize: values[0])
+        let fontName = tokens.count > 5 ? tokens[5] : "system"
+        box.font = fontName == "system" ? .systemFont(ofSize: values[0]) : (NSFont(name: fontName, size: values[0]) ?? .systemFont(ofSize: values[0]))
         box.fontColor = NSColor(deviceRed: values[1], green: values[2], blue: values[3], alpha: values[4])
+        box.border = border(width: 0)
         return true
     }
 

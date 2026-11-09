@@ -100,3 +100,11 @@
 "Edit Text Box" = "编辑文本框";
 "Add Shape" = "添加形状";
 "Move Annotation" = "移动批注";
+"Line Width" = "线条粗细";
+"Font" = "字体";
+"Font Size" = "字号";
+"System Font" = "系统字体";
+"All Fonts" = "全部字体";
+"Change Line Width" = "更改线条粗细";
+"Change Font" = "更改字体";
+"%ld pt" = "%ld 磅";

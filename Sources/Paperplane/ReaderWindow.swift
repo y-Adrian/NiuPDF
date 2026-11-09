@@ -414,6 +414,7 @@ private struct AnnotationToolBar: View {
             }
             Divider().frame(height: 20)
             colorRow
+            styleControls
             Spacer(minLength: 0)
         }
         .padding(.horizontal, 14)
@@ -482,6 +483,46 @@ private struct AnnotationToolBar: View {
         .opacity(hasColor ? 1 : 0.35)
     }
 
+    /// Line width for drawings and shapes; font and size for text boxes.
+    @ViewBuilder
+    private var styleControls: some View {
+        let tool = library.activeTool
+        if tool == .ink || tool.isShape {
+            Divider().frame(height: 20)
+            HStack(spacing: 2) {
+                ForEach(ReaderLibrary.strokeWidths, id: \.self) { width in
+                    Button { library.chooseStrokeWidth(width) } label: {
+                        toolLabel(isActive: library.strokeWidth == width) {
+                            Capsule()
+                                .fill(Color.primary)
+                                .frame(width: 18, height: width)
+                        }
+                    }
+                    .buttonStyle(.plain)
+                    .help(L("%ld pt", Int(width)))
+                    .accessibilityLabel(L("Line Width") + " " + L("%ld pt", Int(width)))
+                }
+            }
+        } else if tool == .textBox {
+            Divider().frame(height: 20)
+            HStack(spacing: 8) {
+                FontFamilyMenu(family: library.textFontFamily) { family in
+                    library.chooseTextFont(family: family, size: library.textFontSize)
+                }
+                Menu {
+                    ForEach(ReaderLibrary.fontSizes, id: \.self) { size in
+                        Button(L("%ld pt", Int(size))) { library.chooseTextFont(family: library.textFontFamily, size: size) }
+                    }
+                } label: {
+                    Text(L("%ld pt", Int(library.textFontSize)))
+                }
+                .menuStyle(.borderlessButton)
+                .fixedSize()
+                .help(L("Font Size"))
+            }
+        }
+    }
+
     private func swatch(_ color: MarkupColor, isSelected: Bool) -> some View {
         Circle()
             .fill(Color(nsColor: color.nsColor))
@@ -523,5 +564,48 @@ private struct AnnotationToolBar: View {
     private func pick(_ shape: AnnotationTool) {
         lastShape = shape
         library.activeTool = shape
+    }
+}
+
+/// Font families for text boxes: the system font, common Latin and Chinese
+/// families that are installed, then every installed family.
+enum FontChoices {
+    static let common = [
+        "Helvetica Neue", "Times New Roman", "Georgia", "Avenir Next", "Courier New", "Menlo",
+        "PingFang SC", "Songti SC", "Kaiti SC", "STHeiti", "Hiragino Sans GB", "Yuanti SC"
+    ].filter { all.contains($0) }
+
+    static let all = NSFontManager.shared.availableFontFamilies.filter { !$0.hasPrefix(".") }
+
+    /// The family's name as the system shows it, such as 苹方 for PingFang SC.
+    static func displayName(_ family: String?) -> String {
+        guard let family else { return L("System Font") }
+        return NSFontManager.shared.localizedName(forFamily: family, face: nil)
+    }
+}
+
+struct FontFamilyMenu: View {
+    let family: String?
+    let choose: (String?) -> Void
+
+    var body: some View {
+        Menu {
+            Button(FontChoices.displayName(nil)) { choose(nil) }
+            Divider()
+            ForEach(FontChoices.common, id: \.self) { name in
+                Button(FontChoices.displayName(name)) { choose(name) }
+            }
+            Divider()
+            Menu(L("All Fonts")) {
+                ForEach(FontChoices.all, id: \.self) { name in
+                    Button(FontChoices.displayName(name)) { choose(name) }
+                }
+            }
+        } label: {
+            Text(FontChoices.displayName(family))
+        }
+        .menuStyle(.borderlessButton)
+        .fixedSize()
+        .help(L("Font"))
     }
 }

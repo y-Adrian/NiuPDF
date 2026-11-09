@@ -182,6 +182,7 @@ final class InlineTextBoxEditor: NSObject, NSTextViewDelegate {
 
         // The overlay skips the box while its text is shown in the editor.
         library.annotationBeingTyped = box
+        library.onTypingStyleChange = { [weak self] in self?.applyBoxStyle() }
         overlay.addSubview(textView)
         fitHeight()
         overlay.window?.makeFirstResponder(textView)
@@ -194,9 +195,20 @@ final class InlineTextBoxEditor: NSObject, NSTextViewDelegate {
         let bounds = textView.frame
         textView.delegate = nil
         textView.removeFromSuperview()
-        if library?.annotationBeingTyped === box { library?.annotationBeingTyped = nil }
+        if library?.annotationBeingTyped === box {
+            library?.annotationBeingTyped = nil
+            library?.onTypingStyleChange = nil
+        }
         library?.finishTextBox(box, text: text, bounds: bounds)
         onFinish(self)
+    }
+
+    /// Follows font, size and color chosen in the toolbar while typing.
+    private func applyBoxStyle() {
+        textView.font = box.font ?? .systemFont(ofSize: ReaderLibrary.textBoxFontSize)
+        textView.textColor = box.fontColor ?? .black
+        textView.insertionPointColor = box.fontColor ?? .black
+        fitHeight()
     }
 
     func textDidChange(_ notification: Notification) {

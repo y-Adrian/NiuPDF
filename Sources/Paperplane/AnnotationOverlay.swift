@@ -251,7 +251,7 @@ final class PageAnnotationOverlay: NSView {
     private func drawToolPreview() {
         guard let toolPreview, let library else { return }
         let path = NSBezierPath()
-        path.lineWidth = ReaderLibrary.strokeWidth
+        path.lineWidth = library.strokeWidth
         path.lineCapStyle = .round
         path.lineJoinStyle = .round
         switch toolPreview {
@@ -407,6 +407,8 @@ final class AnnotationEditorController: NSViewController, NSPopoverDelegate {
     private weak var library: ReaderLibrary?
     private let textView = NSTextView()
     private var swatches: [NSButton] = []
+    private var fontPopup: NSPopUpButton?
+    private var sizePopup: NSPopUpButton?
     private var isDeleted = false
     weak var popover: NSPopover?
 
@@ -455,6 +457,10 @@ final class AnnotationEditorController: NSViewController, NSPopoverDelegate {
             rows.append(row)
             rows.append(Self.hairline())
         }
+        if let styleRow = styleRow() {
+            rows.append(styleRow)
+            rows.append(Self.hairline())
+        }
 
         if showsNoteField { rows += noteRows() }
 
@@ -476,6 +482,92 @@ final class AnnotationEditorController: NSViewController, NSPopoverDelegate {
         stack.spacing = 0
         for row in rows { row.widthAnchor.constraint(equalToConstant: width).isActive = true }
         view = stack
+    }
+
+    /// Line width for drawings and shapes; font family and size for text boxes.
+    private func styleRow() -> NSView? {
+        let controls: [NSView]
+        switch annotation.type {
+        case "Ink", "Square", "Circle", "Line":
+            let widths = ReaderLibrary.strokeWidths
+            let control = NSSegmentedControl(images: widths.map(Self.lineImage), trackingMode: .selectOne, target: self, action: #selector(pickWidth(_:)))
+            for (index, width) in widths.enumerated() {
+                control.setToolTip(L("%ld pt", Int(width)), forSegment: index)
+            }
+            let current = annotation.border?.lineWidth ?? 1
+            control.selectedSegment = widths.firstIndex { abs($0 - current) < 0.01 } ?? -1
+            control.setAccessibilityLabel(L("Line Width"))
+            controls = [control]
+        case "FreeText":
+            let family = NSPopUpButton()
+            family.addItem(withTitle: FontChoices.displayName(nil))
+            family.lastItem?.representedObject = nil
+            family.menu?.addItem(.separator())
+            for name in FontChoices.common + [""] + FontChoices.all {
+                if name.isEmpty {
+                    family.menu?.addItem(.separator())
+                    continue
+                }
+                let item = NSMenuItem(title: FontChoices.displayName(name), action: nil, keyEquivalent: "")
+                item.representedObject = name
+                family.menu?.addItem(item)
+            }
+            let current = ReaderLibrary.fontFamily(of: annotation)
+            if let index = family.itemArray.firstIndex(where: { ($0.representedObject as? String) == current }) {
+                family.selectItem(at: index)
+            }
+            family.target = self
+            family.action = #selector(pickFont(_:))
+            family.setAccessibilityLabel(L("Font"))
+            // Long family names give way first; the size menu keeps its width.
+            family.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+            fontPopup = family
+
+            let size = NSPopUpButton()
+            for value in ReaderLibrary.fontSizes {
+                size.addItem(withTitle: L("%ld pt", Int(value)))
+                size.lastItem?.representedObject = value
+            }
+            let currentSize = annotation.font?.pointSize ?? ReaderLibrary.textBoxFontSize
+            if let index = ReaderLibrary.fontSizes.firstIndex(where: { abs($0 - currentSize) < 0.01 }) {
+                size.selectItem(at: index)
+            }
+            size.target = self
+            size.action = #selector(pickFont(_:))
+            size.setAccessibilityLabel(L("Font Size"))
+            sizePopup = size
+            controls = [family, size]
+        default:
+            return nil
+        }
+        let row = NSStackView(views: controls)
+        row.orientation = .horizontal
+        row.spacing = 8
+        row.edgeInsets = NSEdgeInsets(top: 8, left: 12, bottom: 8, right: 12)
+        return row
+    }
+
+    /// A horizontal line of the given thickness for the line width control.
+    private static func lineImage(_ width: CGFloat) -> NSImage {
+        let image = NSImage(size: NSSize(width: 22, height: 14), flipped: false) { rect in
+            NSColor.black.setFill()
+            let height = min(width, rect.height)
+            NSBezierPath(roundedRect: CGRect(x: 2, y: rect.midY - height / 2, width: rect.width - 4, height: height), xRadius: height / 2, yRadius: height / 2).fill()
+            return true
+        }
+        image.isTemplate = true
+        return image
+    }
+
+    @objc private func pickWidth(_ sender: NSSegmentedControl) {
+        guard ReaderLibrary.strokeWidths.indices.contains(sender.selectedSegment) else { return }
+        library?.setStrokeWidth(annotation, to: ReaderLibrary.strokeWidths[sender.selectedSegment])
+    }
+
+    @objc private func pickFont(_ sender: NSPopUpButton) {
+        let family = fontPopup?.selectedItem?.representedObject as? String
+        let size = sizePopup?.selectedItem?.representedObject as? CGFloat ?? ReaderLibrary.textBoxFontSize
+        library?.setFont(of: annotation, family: family, size: size)
     }
 
     private func noteRows() -> [NSView] {
