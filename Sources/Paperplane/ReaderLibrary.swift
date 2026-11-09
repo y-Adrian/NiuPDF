@@ -205,6 +205,13 @@ final class ReaderLibrary: ObservableObject {
     @Published var focusSearch = false
     /// Set by "Go to Page…" to put the cursor in the page number field.
     @Published var focusPageField = false
+    /// Pages selected in the thumbnail sidebar; page commands act on these, or
+    /// on the current page when none are selected.
+    @Published var selectedPages = IndexSet()
+    /// Where a shift-click range starts.
+    var pageSelectionAnchor: Int?
+    /// Pages being dragged within the thumbnail sidebar.
+    var draggedPages: IndexSet?
     @Published var isSidebarVisible = true
     @Published var sidebarMode: SidebarMode = .thumbnails
     @Published var errorMessage: String?
@@ -349,12 +356,14 @@ final class ReaderLibrary: ObservableObject {
         searchText = ""
         searchResults = []
         searchResultIndex = 0
+        selectedPages = []
+        pageSelectionAnchor = nil
         errorMessage = nil
         AppModel.shared.noteOpened(url)
     }
 
     /// Asks for the user password of an encrypted PDF until it unlocks or the user cancels.
-    private func unlock(_ document: PDFDocument, named name: String) -> Bool {
+    func unlock(_ document: PDFDocument, named name: String) -> Bool {
         var message = L("“%@” is password protected. Enter its password to open it.", name)
         while true {
             let alert = NSAlert()
@@ -1250,7 +1259,7 @@ final class ReaderLibrary: ObservableObject {
     /// Restores what `prepareNotes` changed so the saved file is standard, and
     /// leaves out an annotation still waiting for its text (a note being written
     /// in its popover), which is not part of the document yet.
-    private func withNativeNotesRestored<T>(_ body: () throws -> T) rethrows -> T {
+    func withNativeNotesRestored<T>(_ body: () throws -> T) rethrows -> T {
         let pending = pendingCreation?.edit
         pending?.revert()
         for note in hiddenNativeAnnotations.values { note.shouldDisplay = true }
@@ -1341,7 +1350,9 @@ final class ReaderLibrary: ObservableObject {
         undoManager.setActionName(actionName)
     }
 
-    private func annotationsDidChange() {
+    /// Every document edit, annotation or page, ends here: it counts the change
+    /// for undo-aware "edited", refreshes views and schedules autosave.
+    func annotationsDidChange() {
         if pdfView?.undoManager?.isUndoing == true {
             changeCount -= 1
         } else if pdfView?.undoManager?.isRedoing == true {

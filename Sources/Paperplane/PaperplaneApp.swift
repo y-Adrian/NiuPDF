@@ -178,6 +178,27 @@ struct ReaderCommands: Commands {
                 .keyboardShortcut("g", modifiers: [.command, .option])
                 .disabled(knownEmpty)
         }
+        CommandMenu(L("Pages")) {
+            Button(L("Rotate Left")) { documentLibrary?.rotatePages(by: -90) }
+                .keyboardShortcut("l", modifiers: .command)
+                .disabled(knownEmpty)
+            Button(L("Rotate Right")) { documentLibrary?.rotatePages(by: 90) }
+                .keyboardShortcut("r", modifiers: .command)
+                .disabled(knownEmpty)
+            Divider()
+            Button(L("Insert Blank Page")) { documentLibrary?.insertBlankPage() }
+                .disabled(knownEmpty)
+            Button(L("Insert Pages from File…")) { documentLibrary?.insertPagesFromFiles() }
+                .keyboardShortcut("i", modifiers: [.command, .option])
+                .disabled(knownEmpty)
+            Button(L("Extract Pages…")) { documentLibrary?.extractPages() }
+                .disabled(knownEmpty)
+            Divider()
+            // No shortcut: menu key equivalents win over text fields, and ⌘⌫
+            // in the search field must delete text, not pages.
+            Button(L("Delete Pages")) { documentLibrary?.deletePages() }
+                .disabled(knownEmpty)
+        }
         CommandMenu(L("Annotate")) {
             Button(library?.isAnnotationBarVisible == true ? L("Hide Annotation Tools") : L("Show Annotation Tools")) {
                 documentLibrary?.isAnnotationBarVisible.toggle()

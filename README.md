@@ -8,6 +8,7 @@ A small native macOS PDF reader built with SwiftUI and PDFKit. It takes inspirat
 - A start page with recent files; each file reopens at its own page and zoom
 - Standard shortcuts, following macOS Preview: `⌘W` close tab, `⌘T`/`⌘N` new tab/window, `⌘P` print, `⌥⌘1`–`4` sidebar, `⌘=`/`⌘-`/`⌘0`/`⌘9` zoom, `⌃⌘1`–`4` page layout, `⌥⌘↑`/`⌥⌘↓` pages, `⌃⌘H`/`U`/`S`… annotation tools
 - Navigate pages from the thumbnail sidebar or page number field
+- Manage pages: select thumbnails (⌘-click, ⇧-click), drag to reorder, rotate (`⌘L`/`⌘R`), delete, insert blank pages or pages from other PDFs (also by dropping PDFs on the thumbnails), and extract pages to a new PDF; all undoable
 - Search document text and move through matches
 - Zoom in and out
 - Highlight, underline and strike out selected text; overlapping markup merges, and toggling marked text erases just that part

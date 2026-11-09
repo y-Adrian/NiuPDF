@@ -483,45 +483,168 @@ private final class MarkupPDFView: PDFView, AnnotationOverlayHost {
     }
 }
 
+/// Page thumbnails with page management: click selects, ⌘-click toggles,
+/// ⇧-click selects a range; dragging reorders the selected pages, and PDFs
+/// dropped from Finder are inserted where they land.
 struct ThumbnailSidebar: View {
+    @EnvironmentObject private var library: ReaderLibrary
     let document: PDFDocument
     /// Annotation revision; a change re-renders thumbnails so new markup shows.
     let revision: Int
-    @Binding var selectedIndex: Int
-    let onSelect: (Int) -> Void
+    /// Insertion index under a drag, drawn as a line.
+    @State private var dropIndex: Int?
+    @State private var rowHeights: [Int: CGFloat] = [:]
+
+    private var pages: [PDFPage] { (0..<document.pageCount).compactMap { document.page(at: $0) } }
 
     var body: some View {
         ScrollViewReader { proxy in
             ScrollView {
-                LazyVStack(spacing: 14) {
-                    ForEach(0..<document.pageCount, id: \.self) { index in
-                        if let page = document.page(at: index) {
-                            Button {
-                                selectedIndex = index
-                                onSelect(index)
-                            } label: {
-                                VStack(spacing: 6) {
-                                    thumbnail(for: page, selected: selectedIndex == index, revision: revision)
-                                    Text(L("Page %ld", index + 1))
-                                        .font(.caption)
-                                        .foregroundStyle(selectedIndex == index ? Color.accentColor : .secondary)
-                                }
-                                .frame(maxWidth: .infinity)
-                                .contentShape(Rectangle())
-                            }
-                            .buttonStyle(.plain)
+                LazyVStack(spacing: 0) {
+                    ForEach(Array(pages.enumerated()), id: \.element) { index, page in
+                        row(index: index, page: page)
                             .id(index)
-                        }
                     }
+                    insertionLine(visible: dropIndex == pages.count)
                 }
-                .padding(.vertical, 14)
+                .padding(.vertical, 10)
                 .padding(.horizontal, 12)
             }
             .background(Color(nsColor: .controlBackgroundColor))
-            .onChange(of: selectedIndex) { value in
+            .onPreferenceChange(RowHeightKey.self) { rowHeights = $0 }
+            .onChange(of: library.currentPageIndex) { value in
                 withAnimation(.easeInOut(duration: 0.18)) { proxy.scrollTo(value, anchor: .center) }
             }
         }
+    }
+
+    private func isSelected(_ index: Int) -> Bool {
+        library.selectedPages.isEmpty ? index == library.currentPageIndex : library.selectedPages.contains(index)
+    }
+
+    private func row(index: Int, page: PDFPage) -> some View {
+        VStack(spacing: 0) {
+            insertionLine(visible: dropIndex == index)
+            VStack(spacing: 6) {
+                thumbnail(for: page, selected: isSelected(index), revision: revision)
+                Text(L("Page %ld", index + 1))
+                    .font(.caption)
+                    .foregroundStyle(index == library.currentPageIndex ? Color.accentColor : .secondary)
+            }
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 6)
+            .contentShape(Rectangle())
+        }
+        .background(GeometryReader { geometry in
+            Color.clear.preference(key: RowHeightKey.self, value: [index: geometry.size.height])
+        })
+        .onTapGesture { library.selectPage(index, mode: Self.selectionMode()) }
+        .onDrag {
+            // Dragging an unselected page moves just that page.
+            if !library.selectedPages.contains(index) { library.selectPage(index, mode: .single) }
+            library.draggedPages = library.targetPages
+            return NSItemProvider(object: Self.dragMarker as NSString)
+        }
+        .onDrop(of: [.fileURL, .plainText], delegate: PageDropDelegate(
+            index: index,
+            rowHeight: rowHeights[index] ?? 200,
+            library: library,
+            dropIndex: $dropIndex
+        ))
+        .contextMenu { pageMenu(for: index) }
+        .accessibilityElement(children: .combine)
+        .accessibilityAddTraits(isSelected(index) ? [.isSelected, .isButton] : .isButton)
+    }
+
+    @ViewBuilder
+    private func pageMenu(for index: Int) -> some View {
+        // A right-click outside the selection acts on that page alone.
+        let pages = library.selectedPages.contains(index) ? library.targetPages : IndexSet(integer: index)
+        Button(L("Rotate Left")) { library.rotatePages(pages, by: -90) }
+        Button(L("Rotate Right")) { library.rotatePages(pages, by: 90) }
+        Divider()
+        Button(L("Insert Blank Page")) { library.insertBlankPage(after: pages.last ?? index) }
+        Button(L("Insert Pages from File…")) { library.insertPagesFromFiles(at: (pages.last ?? index) + 1) }
+        Button(L("Extract Pages…")) { library.extractPages(pages) }
+        Divider()
+        Button(L("Delete Pages"), role: .destructive) { library.deletePages(pages) }
+            .disabled(pages.count >= library.pageCount)
+    }
+
+    private func insertionLine(visible: Bool) -> some View {
+        Capsule()
+            .fill(visible ? Color.accentColor : .clear)
+            .frame(height: 3)
+            .padding(.horizontal, 6)
+    }
+
+    static let dragMarker = "paperplane.pages"
+
+    private static func selectionMode() -> ReaderLibrary.PageSelectionMode {
+        let flags = NSEvent.modifierFlags
+        if flags.contains(.shift) { return .range }
+        if flags.contains(.command) { return .toggle }
+        return .single
+    }
+}
+
+private struct RowHeightKey: PreferenceKey {
+    static let defaultValue: [Int: CGFloat] = [:]
+    static func reduce(value: inout [Int: CGFloat], nextValue: () -> [Int: CGFloat]) {
+        value.merge(nextValue()) { $1 }
+    }
+}
+
+/// Drops on a thumbnail row: the upper half inserts before the page, the
+/// lower half after it. Pages dragged within the sidebar move; PDF files from
+/// Finder are inserted.
+private struct PageDropDelegate: DropDelegate {
+    let index: Int
+    let rowHeight: CGFloat
+    let library: ReaderLibrary
+    @Binding var dropIndex: Int?
+
+    private func insertionIndex(_ info: DropInfo) -> Int {
+        info.location.y < rowHeight / 2 ? index : index + 1
+    }
+
+    func dropUpdated(info: DropInfo) -> DropProposal? {
+        dropIndex = insertionIndex(info)
+        return DropProposal(operation: info.hasItemsConforming(to: [.fileURL]) ? .copy : .move)
+    }
+
+    func dropExited(info: DropInfo) {
+        if dropIndex == index || dropIndex == index + 1 { dropIndex = nil }
+    }
+
+    func performDrop(info: DropInfo) -> Bool {
+        let destination = insertionIndex(info)
+        dropIndex = nil
+        let files = info.itemProviders(for: [.fileURL])
+        if !files.isEmpty {
+            let collected = UncheckedSendable(value: NSMutableArray())
+            let group = DispatchGroup()
+            for provider in files {
+                group.enter()
+                _ = provider.loadObject(ofClass: URL.self) { url, _ in
+                    if let url, url.pathExtension.lowercased() == "pdf" {
+                        DispatchQueue.main.async { collected.value.add(url) }
+                    }
+                    group.leave()
+                }
+            }
+            group.notify(queue: .main) { [library] in
+                let urls = collected.value.compactMap { $0 as? URL }
+                MainActor.assumeIsolated {
+                    if !urls.isEmpty { library.insertPages(from: urls, at: destination) }
+                }
+            }
+            return true
+        }
+        guard let pages = library.draggedPages else { return false }
+        library.draggedPages = nil
+        library.movePages(pages, to: destination)
+        return true
     }
 }
 

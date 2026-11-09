@@ -163,3 +163,15 @@
 "Go to Page…" = "Go to Page…";
 "Show Annotation Tools" = "Show Annotation Tools";
 "Hide Annotation Tools" = "Hide Annotation Tools";
+"Rotate Left" = "Rotate Left";
+"Rotate Right" = "Rotate Right";
+"Rotate Pages" = "Rotate Pages";
+"Delete Pages" = "Delete Pages";
+"Insert Blank Page" = "Insert Blank Page";
+"Insert Pages from File…" = "Insert Pages from File…";
+"Insert Pages" = "Insert Pages";
+"Insert" = "Insert";
+"Extract Pages…" = "Extract Pages…";
+"Move Pages" = "Move Pages";
+"%@ (Extract)" = "%@ (Extract)";
+"A document needs at least one page." = "A document needs at least one page.";

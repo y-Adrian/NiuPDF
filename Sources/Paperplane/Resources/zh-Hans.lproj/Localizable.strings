@@ -163,3 +163,15 @@
 "Go to Page…" = "前往页面…";
 "Show Annotation Tools" = "显示标注工具";
 "Hide Annotation Tools" = "隐藏标注工具";
+"Rotate Left" = "向左旋转";
+"Rotate Right" = "向右旋转";
+"Rotate Pages" = "旋转页面";
+"Delete Pages" = "删除页面";
+"Insert Blank Page" = "插入空白页";
+"Insert Pages from File…" = "从文件插入页面…";
+"Insert Pages" = "插入页面";
+"Insert" = "插入";
+"Extract Pages…" = "提取页面…";
+"Move Pages" = "移动页面";
+"%@ (Extract)" = "%@（摘录）";
+"A document needs at least one page." = "文稿至少需要保留一页。";

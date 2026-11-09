@@ -37,13 +37,7 @@ struct ReaderWindow: View {
                             Divider()
                             switch library.sidebarMode {
                             case .thumbnails:
-                                ThumbnailSidebar(
-                                    document: document,
-                                    revision: library.annotationRevision,
-                                    selectedIndex: $library.currentPageIndex
-                                ) { index in
-                                    library.goToPage(index + 1)
-                                }
+                                ThumbnailSidebar(document: document, revision: library.annotationRevision)
                             case .outline:
                                 PDFOutlineSidebar(document: document) { index in
                                     library.goToPage(index + 1)
