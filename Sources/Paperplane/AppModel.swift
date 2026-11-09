@@ -116,8 +116,16 @@ final class AppModel: ObservableObject {
         guard !pendingWindowRequests.isEmpty else { return }
         let request = pendingWindowRequests.removeFirst()
         if let parent = request.tabParent, parent !== window, parent.isVisible {
-            parent.addTabbedWindow(window, ordered: .above)
-            window.makeKeyAndOrderFront(nil)
+            // SwiftUI sizes a new window to its content on its first layout,
+            // which comes after this call. Joining the tab group now would let
+            // that resize the whole group, so join one turn later, at the
+            // group's size.
+            DispatchQueue.main.async {
+                guard parent.isVisible else { return }
+                window.setFrame(parent.frame, display: false)
+                parent.addTabbedWindow(window, ordered: .above)
+                window.makeKeyAndOrderFront(nil)
+            }
         }
         if let url = request.url {
             library.open(url, confirmingUnsavedChanges: false)
