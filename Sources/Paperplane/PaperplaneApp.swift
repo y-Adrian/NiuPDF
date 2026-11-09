@@ -51,6 +51,11 @@ struct PaperplaneApp: App {
         .windowStyle(.titleBar)
         .commands { ReaderCommands() }
 
+        Window(L("Merge PDFs"), id: "merge") {
+            MergeWindow()
+        }
+        .defaultSize(width: 980, height: 640)
+
         // Adds "Settings…" with ⌘, to the app menu.
         Settings {
             SettingsView()
@@ -63,6 +68,7 @@ struct PaperplaneApp: App {
 struct ReaderCommands: Commands {
     @FocusedObject private var focusedLibrary: ReaderLibrary?
     @ObservedObject private var appModel = AppModel.shared
+    @Environment(\.openWindow) private var openWindow
 
     /// SwiftUI's focused object can be empty right after tabs change; the key
     /// window's document is then the one the commands mean.
@@ -97,6 +103,8 @@ struct ReaderCommands: Commands {
                 Button(L("Clear Menu")) { appModel.clearRecents() }
                     .disabled(appModel.recentDocuments.isEmpty)
             }
+            Divider()
+            Button(L("Merge PDFs…")) { openMergeWindow() }
         }
         // Replacing the save group also drops the default Close, so it is added here.
         CommandGroup(replacing: .saveItem) {
@@ -236,6 +244,13 @@ struct ReaderCommands: Commands {
         }
         .keyboardShortcut(key, modifiers: [.command, .control])
         .disabled(knownEmpty)
+    }
+
+    /// Opens the merge window, starting it with the frontmost document.
+    private func openMergeWindow() {
+        let merge = MergeModel.shared
+        if merge.items.isEmpty, let url = documentLibrary?.fileURL { merge.add([url]) }
+        openWindow(id: "merge")
     }
 
     /// ⇧⌘W closes the front window with all of its tabs; each tab still asks

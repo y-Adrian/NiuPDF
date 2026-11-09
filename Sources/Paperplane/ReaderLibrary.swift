@@ -374,6 +374,14 @@ final class ReaderLibrary: ObservableObject {
 
     /// Asks for the user password of an encrypted PDF until it unlocks or the user cancels.
     func unlock(_ document: PDFDocument, named name: String) -> Bool {
+        guard let password = Self.askForPassword(unlocking: document, named: name) else { return false }
+        // Kept in memory only, to unlock the copies that exports render from.
+        documentPassword = password
+        return true
+    }
+
+    /// Asks until the password unlocks `document`; nil when the user cancels.
+    static func askForPassword(unlocking document: PDFDocument, named name: String) -> String? {
         var message = L("“%@” is password protected. Enter its password to open it.", name)
         while true {
             let alert = NSAlert()
@@ -384,12 +392,8 @@ final class ReaderLibrary: ObservableObject {
             let field = NSSecureTextField(frame: NSRect(x: 0, y: 0, width: 240, height: 24))
             alert.accessoryView = field
             alert.window.initialFirstResponder = field
-            guard alert.runModal() == .alertFirstButtonReturn else { return false }
-            if document.unlock(withPassword: field.stringValue) {
-                // Kept in memory only, to unlock the copies that exports render from.
-                documentPassword = field.stringValue
-                return true
-            }
+            guard alert.runModal() == .alertFirstButtonReturn else { return nil }
+            if document.unlock(withPassword: field.stringValue) { return field.stringValue }
             message = L("Incorrect password. Try again.")
         }
     }

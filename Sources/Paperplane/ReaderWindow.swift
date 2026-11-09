@@ -723,6 +723,7 @@ private struct ExportBar: View {
 private struct StartPage: View {
     @EnvironmentObject private var library: ReaderLibrary
     @EnvironmentObject private var appModel: AppModel
+    @Environment(\.openWindow) private var openWindow
     let isDropTargeted: Bool
 
     var body: some View {
@@ -744,6 +745,11 @@ private struct StartPage: View {
                     .buttonStyle(.borderedProminent)
                     Button { appModel.newWindow() } label: {
                         Label(L("New Window"), systemImage: "macwindow.badge.plus")
+                            .frame(minWidth: 160, alignment: .leading)
+                    }
+                    .buttonStyle(.bordered)
+                    Button { openWindow(id: "merge") } label: {
+                        Label(L("Merge PDFs…"), systemImage: "doc.on.doc")
                             .frame(minWidth: 160, alignment: .leading)
                     }
                     .buttonStyle(.bordered)

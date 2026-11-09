@@ -117,7 +117,7 @@ extension ReaderLibrary {
             }
             if source.isLocked, !unlock(source, named: url.lastPathComponent) { return }
             // Copies carry their annotations and stay valid after the source closes.
-            inserted += (0..<source.pageCount).compactMap { source.page(at: $0)?.copy() as? PDFPage }
+            inserted += (0..<source.pageCount).compactMap { source.page(at: $0).flatMap(DocumentMerger.copy(of:)) }
         }
         guard !inserted.isEmpty else { return }
         var order = allPages
@@ -166,7 +166,7 @@ extension ReaderLibrary {
         // the new file holds them in standard form.
         withNativeNotesRestored {
             for (position, index) in indexes.enumerated() {
-                if let copy = document.page(at: index)?.copy() as? PDFPage {
+                if let copy = document.page(at: index).flatMap(DocumentMerger.copy(of:)) {
                     extract.insert(copy, at: position)
                 }
             }
