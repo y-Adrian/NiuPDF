@@ -81,11 +81,12 @@ private struct GeneralSettings: View {
 }
 
 private struct AutosaveSetting: View {
-    @EnvironmentObject private var library: ReaderLibrary
+    /// Shared by every window; each document watches the defaults for changes.
+    @AppStorage(ReaderLibrary.autosaveKey) private var isAutosaveEnabled = true
 
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
-            Toggle(L("Save annotations automatically"), isOn: $library.isAutosaveEnabled)
+            Toggle(L("Save annotations automatically"), isOn: $isAutosaveEnabled)
             Text(L("Changes are written to the PDF a moment after each edit, and when you switch apps or quit."))
                 .font(.callout)
                 .foregroundStyle(.secondary)
@@ -103,9 +104,9 @@ enum AppRelauncher {
 
     static func relaunch() {
         let delegate = NSApp.delegate as? PaperplaneAppDelegate
-        // Settle unsaved annotations first, so quitting cannot be cancelled
-        // after the new instance has started.
-        guard delegate?.library?.confirmDiscardingUnsavedChanges() ?? true else { return }
+        // Settle unsaved annotations in every window first, so quitting cannot
+        // be cancelled after the new instance has started.
+        guard AppModel.shared.confirmClosingAll() else { return }
         delegate?.skipsUnsavedChangesPrompt = true
         let configuration = NSWorkspace.OpenConfiguration()
         configuration.createsNewApplicationInstance = true

@@ -739,19 +739,25 @@ private struct PDFOutlineEntry: View {
 
 /// The sidebar re-renders on every library change (page turns, zoom steps), so
 /// rasterizing each visible page again every time made scrolling and zooming stutter.
+/// Each entry remembers the annotation revision it was drawn at, so several
+/// open documents, each with its own revision, do not clear each other's thumbnails.
 @MainActor
 private enum ThumbnailCache {
-    private static let images = NSCache<PDFPage, NSImage>()
-    private static var revision = -1
-
-    static func image(for page: PDFPage, revision: Int) -> NSImage {
-        if revision != self.revision {
-            images.removeAllObjects()
+    private final class Entry {
+        let image: NSImage
+        let revision: Int
+        init(image: NSImage, revision: Int) {
+            self.image = image
             self.revision = revision
         }
-        if let image = images.object(forKey: page) { return image }
+    }
+
+    private static let images = NSCache<PDFPage, Entry>()
+
+    static func image(for page: PDFPage, revision: Int) -> NSImage {
+        if let entry = images.object(forKey: page), entry.revision == revision { return entry.image }
         let image = page.thumbnail(of: CGSize(width: 150, height: 190), for: .mediaBox)
-        images.setObject(image, forKey: page)
+        images.setObject(Entry(image: image, revision: revision), forKey: page)
         return image
     }
 }

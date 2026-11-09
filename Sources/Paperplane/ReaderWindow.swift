@@ -7,6 +7,7 @@ struct ReaderWindow: View {
     @EnvironmentObject private var library: ReaderLibrary
     @State private var pageInput = "1"
     @State private var isDropTargeted = false
+    @FocusState private var isPageFieldFocused: Bool
 
     var body: some View {
         VStack(spacing: 0) {
@@ -75,9 +76,6 @@ struct ReaderWindow: View {
             }
         }
         .background(Color(nsColor: .windowBackgroundColor))
-        // Opening publishes many properties; doing it during the appearance
-        // update is "publishing changes from within view updates".
-        .onAppear { DispatchQueue.main.async { library.restoreLastDocument() } }
         .onChange(of: library.currentPageIndex) { value in pageInput = "\(value + 1)" }
         .onDrop(of: [UTType.fileURL], isTargeted: $isDropTargeted, perform: handleDrop)
         .alert(L("Operation Failed"), isPresented: Binding(
@@ -109,6 +107,10 @@ struct ReaderWindow: View {
                 .disabled(library.document == nil || library.currentPageIndex <= 0)
                 .help(L("Previous Page"))
             TextField(L("Page"), text: $pageInput)
+                .focused($isPageFieldFocused)
+                .onChange(of: library.focusPageField) { value in
+                    if value { isPageFieldFocused = true; library.focusPageField = false }
+                }
                 .textFieldStyle(.roundedBorder)
                 .frame(width: 48)
                 .multilineTextAlignment(.center)
@@ -237,30 +239,19 @@ struct ReaderWindow: View {
         .foregroundStyle(library.sidebarMode == mode ? Color.accentColor : .secondary)
     }
 
+    /// The start page of an empty window or tab: ways to open a file and the
+    /// recent files.
     private var emptyState: some View {
-        VStack(spacing: 14) {
-            Image(systemName: "doc.text.magnifyingglass")
-                .font(.system(size: 46, weight: .light))
-                .foregroundStyle(.tertiary)
-            Text(L("Open a PDF to Start Reading"))
-                .font(.title3.weight(.medium))
-            Text(L("Drag a PDF into the window, or choose one from your files."))
-                .foregroundStyle(.secondary)
-            Button { library.presentOpenPanel() } label: {
-                Label(L("Choose PDF…"), systemImage: "folder")
+        StartPage(isDropTargeted: isDropTargeted)
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .background(isDropTargeted ? Color.accentColor.opacity(0.08) : Color(nsColor: .controlBackgroundColor))
+            .overlay {
+                if isDropTargeted {
+                    RoundedRectangle(cornerRadius: 12)
+                        .strokeBorder(Color.accentColor, style: StrokeStyle(lineWidth: 2, dash: [8]))
+                        .padding(24)
+                }
             }
-            .buttonStyle(.borderedProminent)
-            .padding(.top, 4)
-        }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(isDropTargeted ? Color.accentColor.opacity(0.08) : Color(nsColor: .controlBackgroundColor))
-        .overlay {
-            if isDropTargeted {
-                RoundedRectangle(cornerRadius: 12)
-                    .strokeBorder(Color.accentColor, style: StrokeStyle(lineWidth: 2, dash: [8]))
-                    .padding(24)
-            }
-        }
     }
 
     private func commitPageInput() {
@@ -271,11 +262,26 @@ struct ReaderWindow: View {
         library.goToPage(page)
     }
 
+    /// Dropped PDFs open like files from the Open panel: into this window when
+    /// it is empty, as tabs otherwise.
     private func handleDrop(_ providers: [NSItemProvider]) -> Bool {
-        guard let provider = providers.first else { return false }
-        _ = provider.loadObject(ofClass: URL.self) { url, _ in
-            guard let url else { return }
-            Task { @MainActor in library.open(url) }
+        guard !providers.isEmpty else { return false }
+        let group = DispatchGroup()
+        let collected = UncheckedSendable(value: NSMutableArray())
+        for provider in providers {
+            group.enter()
+            _ = provider.loadObject(ofClass: URL.self) { url, _ in
+                if let url, url.pathExtension.lowercased() == "pdf" {
+                    DispatchQueue.main.async { collected.value.add(url) }
+                }
+                group.leave()
+            }
+        }
+        group.notify(queue: .main) { [library] in
+            let urls = collected.value.compactMap { $0 as? URL }
+            MainActor.assumeIsolated {
+                if !urls.isEmpty { AppModel.shared.open(urls, preferring: library) }
+            }
         }
         return true
     }
@@ -720,5 +726,124 @@ private struct ExportBar: View {
             Button(L("Export…")) { library.exportImages() }
                 .buttonStyle(.bordered)
         }
+    }
+}
+
+/// Opening options and the recent files, shown in a window with no document.
+private struct StartPage: View {
+    @EnvironmentObject private var library: ReaderLibrary
+    @EnvironmentObject private var appModel: AppModel
+    let isDropTargeted: Bool
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 40) {
+            VStack(alignment: .leading, spacing: 14) {
+                Image(systemName: "doc.text.magnifyingglass")
+                    .font(.system(size: 44, weight: .light))
+                    .foregroundStyle(.tertiary)
+                Text(L("Open a PDF to Start Reading"))
+                    .font(.title2.weight(.semibold))
+                Text(L("Drag one or more PDFs into the window, or choose them from your files."))
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                VStack(alignment: .leading, spacing: 8) {
+                    Button { library.presentOpenPanel() } label: {
+                        Label(L("Choose PDF…"), systemImage: "folder")
+                            .frame(minWidth: 160, alignment: .leading)
+                    }
+                    .buttonStyle(.borderedProminent)
+                    Button { appModel.newWindow() } label: {
+                        Label(L("New Window"), systemImage: "macwindow.badge.plus")
+                            .frame(minWidth: 160, alignment: .leading)
+                    }
+                    .buttonStyle(.bordered)
+                }
+                .padding(.top, 6)
+            }
+            .frame(width: 300, alignment: .leading)
+
+            recentList
+                .frame(width: 380)
+        }
+        .padding(40)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+
+    private var recentList: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack {
+                Text(L("Recent Files"))
+                    .font(.headline)
+                Spacer()
+                if !appModel.recentDocuments.isEmpty {
+                    Button(L("Clear")) { appModel.clearRecents() }
+                        .buttonStyle(.borderless)
+                        .font(.callout)
+                }
+            }
+            if appModel.recentDocuments.isEmpty {
+                Text(L("Files you open appear here."))
+                    .foregroundStyle(.secondary)
+                    .frame(maxWidth: .infinity, minHeight: 120)
+                    .background(Color(nsColor: .textBackgroundColor).opacity(0.5), in: RoundedRectangle(cornerRadius: 8))
+            } else {
+                ScrollView {
+                    LazyVStack(spacing: 2) {
+                        ForEach(appModel.recentDocuments) { recent in
+                            RecentRow(recent: recent) {
+                                appModel.openRecent(recent, preferring: library)
+                            }
+                            .contextMenu {
+                                Button(L("Show in Finder")) {
+                                    NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: recent.path)])
+                                }
+                                Button(L("Remove from Recent Files")) { appModel.removeRecent(recent) }
+                            }
+                        }
+                    }
+                    .padding(4)
+                }
+                .frame(maxHeight: 340)
+                .background(Color(nsColor: .textBackgroundColor), in: RoundedRectangle(cornerRadius: 8))
+                .overlay(RoundedRectangle(cornerRadius: 8).strokeBorder(Color(nsColor: .separatorColor).opacity(0.6)))
+            }
+        }
+    }
+}
+
+private struct RecentRow: View {
+    let recent: RecentDocument
+    let open: () -> Void
+    @State private var isHovered = false
+
+    var body: some View {
+        Button(action: open) {
+            HStack(spacing: 10) {
+                Image(nsImage: NSWorkspace.shared.icon(for: .pdf))
+                    .resizable()
+                    .frame(width: 28, height: 28)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(recent.name)
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                    Text(recent.folder.replacingOccurrences(of: NSHomeDirectory(), with: "~"))
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                        .truncationMode(.head)
+                }
+                Spacer(minLength: 8)
+                Text(recent.openedAt, format: .relative(presentation: .named))
+                    .font(.caption)
+                    .foregroundStyle(.tertiary)
+            }
+            .padding(.horizontal, 10)
+            .padding(.vertical, 6)
+            .background(isHovered ? Color.accentColor.opacity(0.1) : .clear, in: RoundedRectangle(cornerRadius: 6))
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .onHover { isHovered = $0 }
+        .help(recent.path)
     }
 }

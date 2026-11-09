@@ -203,6 +203,8 @@ final class ReaderLibrary: ObservableObject {
     /// Set by the PDF view: commits a text box still being typed into.
     var commitPendingEdits: (() -> Void)?
     @Published var focusSearch = false
+    /// Set by "Go to Page…" to put the cursor in the page number field.
+    @Published var focusPageField = false
     @Published var isSidebarVisible = true
     @Published var sidebarMode: SidebarMode = .thumbnails
     @Published var errorMessage: String?
@@ -219,12 +221,19 @@ final class ReaderLibrary: ObservableObject {
     private var savedChangeCount = 0
 
     /// Writes annotation changes to the file a moment after each edit, as the
-    /// requirements ask ("annotations land on disk in real time").
-    @Published var isAutosaveEnabled = UserDefaults.standard.object(forKey: "autosaveEnabled") as? Bool ?? true {
-        didSet {
-            UserDefaults.standard.set(isAutosaveEnabled, forKey: "autosaveEnabled")
-            if isAutosaveEnabled { scheduleAutosave() } else { autosaveTask?.cancel() }
+    /// requirements ask ("annotations land on disk in real time"). One setting
+    /// for all windows, changed in Settings.
+    static let autosaveKey = "autosaveEnabled"
+    var isAutosaveEnabled: Bool {
+        get { UserDefaults.standard.object(forKey: Self.autosaveKey) as? Bool ?? true }
+        set {
+            UserDefaults.standard.set(newValue, forKey: Self.autosaveKey)
+            autosaveSettingChanged()
         }
+    }
+
+    private func autosaveSettingChanged() {
+        if isAutosaveEnabled { scheduleAutosave() } else { autosaveTask?.cancel() }
     }
     enum AutosaveState: Equatable {
         case saved
@@ -246,82 +255,59 @@ final class ReaderLibrary: ObservableObject {
     }
 
     weak var pdfView: PDFView?
+    /// The window or tab showing this document.
+    weak var window: NSWindow?
     private var documentPassword: String?
     private var scopedURL: URL?
     private var fileRevision: PDFFileRevision?
-    private var didAttemptRestore = false
     private var pendingRestoredZoomScale: CGFloat?
-
-    private enum ReadingStateKey {
-        static let bookmark = "lastOpenedPDFBookmark"
-        static let pageIndex = "lastOpenedPDFPageIndex"
-        static let zoomScale = "lastOpenedPDFZoomScale"
-    }
+    private var observers: [NSObjectProtocol] = []
 
     init() {
+        let center = NotificationCenter.default
         // Switching to another app is a natural moment to have everything on disk.
-        NotificationCenter.default.addObserver(forName: NSApplication.willResignActiveNotification, object: nil, queue: .main) { [weak self] _ in
+        observers.append(center.addObserver(forName: NSApplication.willResignActiveNotification, object: nil, queue: .main) { [weak self] _ in
             MainActor.assumeIsolated { self?.autosaveNow() }
-        }
+        })
+        // Settings changes the shared autosave setting for every window.
+        observers.append(center.addObserver(forName: UserDefaults.didChangeNotification, object: nil, queue: .main) { [weak self] _ in
+            MainActor.assumeIsolated { self?.autosaveSettingChanged() }
+        })
+    }
+
+    deinit {
+        observers.forEach(NotificationCenter.default.removeObserver)
+        scopedURL?.stopAccessingSecurityScopedResource()
     }
 
     var displayName: String { fileURL?.deletingPathExtension().lastPathComponent ?? L("No Document") }
 
-    func restoreLastDocument() {
-        guard !didAttemptRestore else { return }
-        didAttemptRestore = true
-        guard let bookmark = UserDefaults.standard.data(forKey: ReadingStateKey.bookmark) else { return }
-
-        do {
-            var isStale = false
-            let url = try URL(
-                resolvingBookmarkData: bookmark,
-                options: [.withSecurityScope],
-                relativeTo: nil,
-                bookmarkDataIsStale: &isStale
-            )
-            open(url, restoringLastDocument: true)
-        } catch {
-            forgetLastDocument()
-            errorMessage = L("Couldn’t restore the last opened PDF. Choose the file again.") + "\n" + error.localizedDescription
-        }
-    }
-
-    /// A bookmark that cannot be restored would otherwise raise the same error on every launch.
-    private func forgetLastDocument() {
-        UserDefaults.standard.removeObject(forKey: ReadingStateKey.bookmark)
-        UserDefaults.standard.removeObject(forKey: ReadingStateKey.pageIndex)
-        UserDefaults.standard.removeObject(forKey: ReadingStateKey.zoomScale)
-    }
-
+    /// Open panel for this window: an empty window shows the first file, and
+    /// further files open as tabs.
     func presentOpenPanel() {
-        guard confirmDiscardingUnsavedChanges() else { return }
-        let panel = NSOpenPanel()
-        panel.allowedContentTypes = [.pdf]
-        panel.allowsMultipleSelection = false
-        panel.canChooseDirectories = false
-        panel.prompt = L("Open")
-        panel.begin { [weak self] response in
-            guard response == .OK, let url = panel.url else { return }
-            Task { @MainActor in self?.open(url) }
-        }
+        AppModel.shared.presentOpenPanel(for: self)
     }
 
-    /// Opens a user-chosen file. The open panel asks about unsaved changes before
-    /// it is shown; drag and drop goes through `confirmDiscardingUnsavedChanges` here.
+    /// The window is closing; unsaved changes were settled by its close button.
+    func close() {
+        commitPendingEdits?()
+        autosaveTask?.cancel()
+        searchTask?.cancel()
+        exportTask?.cancel()
+        scopedURL?.stopAccessingSecurityScopedResource()
+        scopedURL = nil
+    }
+
+    /// Opens a file in this window, replacing its document. Each file comes
+    /// back at the page and zoom it was last read at.
     func open(_ url: URL, confirmingUnsavedChanges: Bool = true) {
         if confirmingUnsavedChanges { guard confirmDiscardingUnsavedChanges() else { return } }
-        open(url, restoringLastDocument: false)
-    }
-
-    private func open(_ url: URL, restoringLastDocument: Bool) {
         let didStartAccess = url.startAccessingSecurityScopedResource()
         let opened: (document: PDFDocument, revision: PDFFileRevision)
         do {
             opened = try SafePDFFileStore.read(from: url)
         } catch {
             if didStartAccess { url.stopAccessingSecurityScopedResource() }
-            if restoringLastDocument { forgetLastDocument() }
             errorMessage = error.localizedDescription
             return
         }
@@ -356,23 +342,15 @@ final class ReaderLibrary: ObservableObject {
         fileURL = url
         fileRevision = opened.revision
         pageCount = opened.document.pageCount
-        let rememberedIndex = restoringLastDocument
-            ? UserDefaults.standard.integer(forKey: ReadingStateKey.pageIndex)
-            : 0
-        currentPageIndex = min(max(rememberedIndex, 0), max(opened.document.pageCount - 1, 0))
-        UserDefaults.standard.set(currentPageIndex, forKey: ReadingStateKey.pageIndex)
-        if restoringLastDocument {
-            let rememberedScale = UserDefaults.standard.double(forKey: ReadingStateKey.zoomScale)
-            pendingRestoredZoomScale = rememberedScale > 0 ? CGFloat(rememberedScale) : nil
-        } else {
-            pendingRestoredZoomScale = nil
-            pdfView?.autoScales = true
-        }
+        let remembered = ReadingPositions.position(for: url)
+        currentPageIndex = min(max(remembered?.page ?? 0, 0), max(opened.document.pageCount - 1, 0))
+        pendingRestoredZoomScale = remembered?.zoom
+        if pendingRestoredZoomScale == nil { pdfView?.autoScales = true }
         searchText = ""
         searchResults = []
         searchResultIndex = 0
         errorMessage = nil
-        persistSecurityScopedBookmark(for: url)
+        AppModel.shared.noteOpened(url)
     }
 
     /// Asks for the user password of an encrypted PDF until it unlocks or the user cancels.
@@ -424,27 +402,45 @@ final class ReaderLibrary: ObservableObject {
         guard let page = document.page(at: index) else { return }
         pdfView?.go(to: page)
         currentPageIndex = index
-        UserDefaults.standard.set(index, forKey: ReadingStateKey.pageIndex)
+        if let fileURL { ReadingPositions.record(page: index, for: fileURL) }
     }
 
     func updateCurrentPage(_ index: Int) {
         guard document?.pageCount ?? 0 > 0 else { return }
         let safeIndex = min(max(index, 0), (document?.pageCount ?? 1) - 1)
         currentPageIndex = safeIndex
-        UserDefaults.standard.set(safeIndex, forKey: ReadingStateKey.pageIndex)
+        if let fileURL { ReadingPositions.record(page: safeIndex, for: fileURL) }
     }
 
-    private func persistSecurityScopedBookmark(for url: URL) {
-        do {
-            let bookmark = try url.bookmarkData(
-                options: [.withSecurityScope],
-                includingResourceValuesForKeys: nil,
-                relativeTo: nil
-            )
-            UserDefaults.standard.set(bookmark, forKey: ReadingStateKey.bookmark)
-        } catch {
-            // The document remains usable in this session even if macOS cannot create a bookmark.
-            errorMessage = L("The document is open, but it couldn’t be remembered for next time.") + "\n" + error.localizedDescription
+    // MARK: - Menu commands
+
+    /// Searches for the selected text (⌘E), as text views do.
+    func useSelectionForFind() {
+        guard let text = pdfView?.currentSelection?.string?.trimmingCharacters(in: .whitespacesAndNewlines), !text.isEmpty else { return }
+        find(text)
+        focusSearch = true
+    }
+
+    func showSidebar(_ mode: SidebarMode) {
+        sidebarMode = mode
+        isSidebarVisible = true
+    }
+
+    /// Prints the document as it would be saved, so annotations the overlay
+    /// draws on screen are included.
+    func printDocument() {
+        guard let document else { return }
+        commitPendingEdits?()
+        guard let snapshot = exportSnapshot(of: document),
+              let operation = snapshot.value.printOperation(for: NSPrintInfo.shared, scalingMode: .pageScaleToFit, autoRotate: true) else {
+            errorMessage = DocumentExportError.unableToWrite.localizedDescription
+            return
+        }
+        operation.jobTitle = displayName
+        if let window {
+            operation.runModal(for: window, delegate: nil, didRun: nil, contextInfo: nil)
+        } else {
+            operation.run()
         }
     }
 
@@ -500,7 +496,7 @@ final class ReaderLibrary: ObservableObject {
     func updateZoomScale(_ scale: CGFloat) {
         guard scale.isFinite, scale > 0 else { return }
         zoomScale = scale
-        UserDefaults.standard.set(Double(scale), forKey: ReadingStateKey.zoomScale)
+        if let fileURL { ReadingPositions.record(zoom: scale, for: fileURL) }
     }
 
     func applyPendingRestoredZoom(to view: PDFView) {
