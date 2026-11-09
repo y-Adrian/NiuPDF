@@ -5,8 +5,12 @@ import PDFKit
 /// standalone `/Text` note whose native PDFKit icon is hidden on screen.
 struct CommentMarker {
     let annotation: PDFAnnotation
-    /// Page-space center of the icon. The icon keeps a constant on-screen size.
+    /// Page-space center of the icon.
     let center: CGPoint
+    /// Page-space side, proportional to the text's line height so the icon
+    /// scales with the text. Nil keeps a constant on-screen size instead, for
+    /// standalone notes, which have no line of their own.
+    let side: CGFloat?
     /// Page-space text rectangles the note belongs to, tinted while hovering.
     let linkedRects: [CGRect]
 }
@@ -20,22 +24,18 @@ protocol AnnotationOverlayHost: AnyObject {
 
 // MARK: - Layout
 
-/// Places markup note icons close to the first line of their text without
-/// covering glyphs: in the whitespace above that line, then beside its ends.
-/// Icons that share a line are shifted apart so they never overlap.
+/// Puts each markup note icon at the top-right corner of the first line of its
+/// text, like a superscript, sized in proportion to that line's height.
+/// Icons that would overlap move further right.
 enum CommentMarkerLayout {
-    /// Page-space slot reserved per icon; about 16 px on screen at 115 %.
-    private static let slotSize: CGFloat = 14
-    private static let anchorGap: CGFloat = 2
-    private static let stackGap: CGFloat = 2
-    private static let pageInset: CGFloat = 4
-    /// Keys from earlier versions that link a standalone note to its text.
+    /// Icon side as a fraction of the line height.
+    private static let sizeRatio: CGFloat = 0.7
+    /// Gap from the end of the text, as a fraction of the icon side.
+    private static let gapRatio: CGFloat = 0.1
+    /// How much of the icon sits below the line's top edge, as a fraction of its side.
+    private static let dropRatio: CGFloat = 0.55
+    /// Key from earlier versions that links a standalone note to its text.
     private static let legacyAnchorKey = PDFAnnotationKey(rawValue: "/PaperplaneAnchor")
-
-    private enum Axis {
-        case horizontal
-        case vertical
-    }
 
     static func markers(
         on page: PDFPage,
@@ -46,28 +46,39 @@ enum CommentMarkerLayout {
         var occupied: [CGRect] = []
 
         for note in page.annotations where note.type == "Text" && showsStandaloneNote(note) {
-            let center = CGPoint(x: note.bounds.midX, y: note.bounds.midY)
-            markers.append(CommentMarker(annotation: note, center: center, linkedRects: legacyAnchor(of: note).map { [$0] } ?? []))
-            occupied.append(slot(around: center))
+            markers.append(CommentMarker(
+                annotation: note,
+                center: CGPoint(x: note.bounds.midX, y: note.bounds.midY),
+                side: nil,
+                linkedRects: legacyAnchor(of: note).map { [$0] } ?? []
+            ))
+            occupied.append(note.bounds)
         }
 
-        let noted = page.annotations.filter {
-            MarkupEngine.isMarkup($0) && !noteOf($0).trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-        }
-        guard !noted.isEmpty else { return markers }
-        let lines = pageLineBounds(on: page).sorted { $0.maxY > $1.maxY }
-        for markup in noted {
+        let pageBounds = page.bounds(for: .mediaBox)
+        for markup in page.annotations where MarkupEngine.isMarkup(markup)
+            && !noteOf(markup).trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
             let linked = MarkupEngine.lineRects(of: markup)
             guard let firstLine = linked.max(by: { $0.maxY < $1.maxY }) else { continue }
-            let rect = place(near: firstLine, on: page, lines: lines, occupied: occupied)
+            let side = max(firstLine.height * sizeRatio, 4)
+            var rect = CGRect(
+                x: firstLine.maxX + side * gapRatio,
+                y: firstLine.maxY - side * dropRatio,
+                width: side,
+                height: side
+            )
+            while occupied.contains(where: { $0.intersects(rect) }) { rect.origin.x += side * (1 + gapRatio) }
+            rect.origin.x = min(rect.minX, pageBounds.maxX - side)
+            rect.origin.y = min(rect.minY, pageBounds.maxY - side)
             occupied.append(rect)
-            markers.append(CommentMarker(annotation: markup, center: CGPoint(x: rect.midX, y: rect.midY), linkedRects: linked))
+            markers.append(CommentMarker(
+                annotation: markup,
+                center: CGPoint(x: rect.midX, y: rect.midY),
+                side: side,
+                linkedRects: linked
+            ))
         }
         return markers
-    }
-
-    private static func slot(around center: CGPoint) -> CGRect {
-        CGRect(x: center.x - slotSize / 2, y: center.y - slotSize / 2, width: slotSize, height: slotSize)
     }
 
     private static func legacyAnchor(of note: PDFAnnotation) -> CGRect? {
@@ -75,75 +86,6 @@ enum CommentMarkerLayout {
         let values = raw.split(separator: " ").compactMap { Double($0) }
         guard values.count == 4 else { return nil }
         return CGRect(x: values[0], y: values[1], width: values[2], height: values[3])
-    }
-
-    private static func place(near selection: CGRect, on page: PDFPage, lines: [CGRect], occupied: [CGRect]) -> CGRect {
-        let pageBounds = page.bounds(for: .mediaBox)
-        let minX = pageBounds.minX + pageInset
-        let maxX = pageBounds.maxX - slotSize - pageInset
-        let minY = pageBounds.minY + pageInset
-        let maxY = pageBounds.maxY - slotSize - pageInset
-
-        let anchorLine = lines.first(where: { $0.intersects(selection) }) ?? selection
-        let lineAbove = lines
-            .filter { $0.minY > anchorLine.maxY }
-            .min(by: { $0.minY < $1.minY })
-        func resolve(_ base: CGRect, _ axis: Axis) -> CGRect? {
-            Self.resolve(base, axis: axis, lines: lines, occupied: occupied, minX: minX, maxX: maxX, minY: minY, maxY: maxY)
-        }
-
-        // 1) Above the selection's end, inside the whitespace between lines.
-        let ceiling = lineAbove?.minY ?? (pageBounds.maxY - pageInset)
-        if ceiling - anchorLine.maxY >= slotSize + 2 * anchorGap {
-            let base = CGRect(x: selection.maxX - slotSize / 2, y: anchorLine.maxY + anchorGap, width: slotSize, height: slotSize)
-            if let rect = resolve(base, .horizontal) { return rect }
-        }
-        // 2) Beside the line's end, then its start.
-        let right = CGRect(x: anchorLine.maxX + anchorGap, y: anchorLine.midY - slotSize / 2, width: slotSize, height: slotSize)
-        if let rect = resolve(right, .vertical) { return rect }
-        let left = CGRect(x: anchorLine.minX - anchorGap - slotSize, y: anchorLine.midY - slotSize / 2, width: slotSize, height: slotSize)
-        if let rect = resolve(left, .vertical) { return rect }
-        // 3) Best effort: at the selection's upper-right corner, clamped to the page.
-        return CGRect(
-            x: min(max(selection.maxX - slotSize / 2, minX), maxX),
-            y: min(max(selection.maxY - slotSize / 2, minY), maxY),
-            width: slotSize,
-            height: slotSize
-        )
-    }
-
-    private static func resolve(
-        _ base: CGRect,
-        axis: Axis,
-        lines: [CGRect],
-        occupied: [CGRect],
-        minX: CGFloat,
-        maxX: CGFloat,
-        minY: CGFloat,
-        maxY: CGFloat
-    ) -> CGRect? {
-        let step = slotSize + stackGap
-        let offsets: [CGFloat] = [0, -step, step, -2 * step, 2 * step, -3 * step, 3 * step, -4 * step, 4 * step]
-        for offset in offsets {
-            let candidate = axis == .horizontal
-                ? base.offsetBy(dx: offset, dy: 0)
-                : base.offsetBy(dx: 0, dy: offset)
-            let inPage = candidate.minX >= minX && candidate.minX <= maxX
-                && candidate.minY >= minY && candidate.minY <= maxY
-            if inPage, !lines.contains(where: { $0.intersects(candidate) }), !occupied.contains(where: { $0.intersects(candidate) }) {
-                return candidate
-            }
-        }
-        return nil
-    }
-
-    private static func pageLineBounds(on page: PDFPage) -> [CGRect] {
-        guard let text = page.string, !text.isEmpty,
-              let full = page.selection(for: NSRange(location: 0, length: (text as NSString).length)) else { return [] }
-        return full.selectionsByLine().compactMap { selection in
-            let bounds = selection.bounds(for: page)
-            return bounds.isNull || bounds.isEmpty ? nil : bounds
-        }
     }
 }
 
@@ -221,7 +163,6 @@ final class PageAnnotationOverlay: NSView {
     private let page: PDFPage
     private weak var library: ReaderLibrary?
     private weak var hovered: PDFAnnotation?
-    private var previewPopover: NSPopover?
 
     init(page: PDFPage, library: ReaderLibrary?) {
         self.page = page
@@ -244,10 +185,10 @@ final class PageAnnotationOverlay: NSView {
 
     /// The overlay is drawn in page points, so a constant on-screen size means
     /// dividing by the current zoom.
-    private var iconSide: CGFloat { CommentIcon.screenSize / max(pdfView?.scaleFactor ?? 1, 0.05) }
+    private var constantIconSide: CGFloat { CommentIcon.screenSize / max(pdfView?.scaleFactor ?? 1, 0.05) }
 
     private func iconRect(_ marker: CommentMarker) -> CGRect {
-        let side = iconSide
+        let side = marker.side ?? constantIconSide
         return CGRect(x: marker.center.x - side / 2, y: marker.center.y - side / 2, width: side, height: side)
     }
 
@@ -257,7 +198,8 @@ final class PageAnnotationOverlay: NSView {
     }
 
     func refresh() {
-        if let hovered, !markers.contains(where: { $0.annotation === hovered }) { setHovered(nil) }
+        // Zooming or editing moves icons, so a shown preview would point at the old spot.
+        if hovered != nil { setHovered(nil) }
         needsDisplay = true
         window?.invalidateCursorRects(for: self)
     }
@@ -317,40 +259,79 @@ final class PageAnnotationOverlay: NSView {
         guard marker?.annotation !== hovered else { return }
         hovered = marker?.annotation
         needsDisplay = true
-        previewPopover?.close()
-        previewPopover = nil
-        guard let marker, let text = library?.note(of: marker.annotation),
-              !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
-        let popover = NSPopover()
-        popover.behavior = .applicationDefined
-        popover.animates = false
-        popover.contentViewController = NotePreviewController(text: text)
-        popover.show(relativeTo: iconRect(marker), of: self, preferredEdge: .maxY)
-        previewPopover = popover
+        guard let marker, let window, let text = library?.note(of: marker.annotation),
+              !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            NotePreviewPanel.shared.hide()
+            return
+        }
+        NotePreviewPanel.shared.show(text, near: window.convertToScreen(convert(iconRect(marker), to: nil)))
+    }
+
+    override func viewWillMove(toWindow newWindow: NSWindow?) {
+        if newWindow == nil, hovered != nil { NotePreviewPanel.shared.hide() }
+        super.viewWillMove(toWindow: newWindow)
     }
 }
 
-/// Read-only hover preview of a note.
-private final class NotePreviewController: NSViewController {
-    private let text: String
+/// Read-only hover preview of a note: a borderless tooltip-style panel, so it
+/// has no popover arrow and never takes focus or clicks.
+@MainActor
+private final class NotePreviewPanel {
+    static let shared = NotePreviewPanel()
 
-    init(text: String) {
-        self.text = text
-        super.init(nibName: nil, bundle: nil)
-    }
+    private let panel: NSPanel
+    private let background = NSVisualEffectView()
+    private let label = NSTextField(wrappingLabelWithString: "")
 
-    required init?(coder: NSCoder) { nil }
+    private init() {
+        panel = NSPanel(contentRect: .zero, styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: true)
+        panel.isOpaque = false
+        panel.backgroundColor = .clear
+        panel.hasShadow = true
+        panel.level = .floating
+        panel.ignoresMouseEvents = true
+        panel.hidesOnDeactivate = true
 
-    override func loadView() {
-        let label = NSTextField(wrappingLabelWithString: text)
+        background.material = .toolTip
+        background.state = .active
+        background.wantsLayer = true
+        background.layer?.cornerRadius = 6
+        background.layer?.masksToBounds = true
+
         label.font = .systemFont(ofSize: 12)
         label.maximumNumberOfLines = 8
         label.lineBreakMode = .byTruncatingTail
         label.preferredMaxLayoutWidth = 240
-        let container = NSStackView(views: [label])
-        container.edgeInsets = NSEdgeInsets(top: 8, left: 10, bottom: 8, right: 10)
-        label.widthAnchor.constraint(lessThanOrEqualToConstant: 240).isActive = true
-        view = container
+        label.translatesAutoresizingMaskIntoConstraints = false
+        background.addSubview(label)
+        NSLayoutConstraint.activate([
+            label.leadingAnchor.constraint(equalTo: background.leadingAnchor, constant: 10),
+            label.trailingAnchor.constraint(equalTo: background.trailingAnchor, constant: -10),
+            label.topAnchor.constraint(equalTo: background.topAnchor, constant: 7),
+            label.bottomAnchor.constraint(equalTo: background.bottomAnchor, constant: -7),
+            label.widthAnchor.constraint(lessThanOrEqualToConstant: 240)
+        ])
+        panel.contentView = background
+    }
+
+    /// Shows the text above `anchor` (screen coordinates), or below it when
+    /// there is no room above.
+    func show(_ text: String, near anchor: NSRect) {
+        label.stringValue = text
+        background.layoutSubtreeIfNeeded()
+        let size = background.fittingSize
+        let gap: CGFloat = 6
+        var origin = CGPoint(x: anchor.midX - size.width / 2, y: anchor.maxY + gap)
+        if let visible = NSScreen.screens.first(where: { $0.frame.intersects(anchor) })?.visibleFrame {
+            if origin.y + size.height > visible.maxY { origin.y = anchor.minY - gap - size.height }
+            origin.x = min(max(origin.x, visible.minX + 4), visible.maxX - size.width - 4)
+        }
+        panel.setFrame(NSRect(origin: origin, size: size), display: true)
+        panel.orderFront(nil)
+    }
+
+    func hide() {
+        panel.orderOut(nil)
     }
 }
 
