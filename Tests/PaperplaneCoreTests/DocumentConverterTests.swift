@@ -73,4 +73,15 @@ final class DocumentConverterTests: XCTestCase {
         XCTAssertEqual(try DocumentConverter.page(fromImageAt: wide, size: .letter).bounds(for: .mediaBox).size, CGSize(width: 792, height: 612))
         XCTAssertThrowsError(try DocumentConverter.page(fromImageAt: fixture("markup-regression.pdf").deletingLastPathComponent().appendingPathComponent("manifest.json"), size: .a4))
     }
+
+    func testUnusedNames() throws {
+        let folder = FileManager.default.temporaryDirectory.appendingPathComponent("paperplane-names-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: folder) }
+        XCTAssertEqual(DocumentConverter.unusedURL(for: "a.txt", in: folder).lastPathComponent, "a.txt")
+        try Data().write(to: folder.appendingPathComponent("a.txt"))
+        XCTAssertEqual(DocumentConverter.unusedURL(for: "a.txt", in: folder).lastPathComponent, "a 2.txt")
+        try Data().write(to: folder.appendingPathComponent("a 2.txt"))
+        XCTAssertEqual(DocumentConverter.unusedURL(for: "a.txt", in: folder).lastPathComponent, "a 3.txt")
+    }
 }

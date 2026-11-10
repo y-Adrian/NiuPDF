@@ -116,22 +116,10 @@ extension ReaderLibrary {
         var written = 0
         for group in groups where !group.isEmpty {
             let name = L("%@ (Pages %@)", displayName, DocumentSplitter.label(for: group)) + ".pdf"
-            try writePages(IndexSet(group), to: Self.unusedURL(for: name, in: folder))
+            try writePages(IndexSet(group), to: DocumentConverter.unusedURL(for: name, in: folder))
             written += 1
         }
         return written
-    }
-
-    /// `name` in `folder`, numbered when a file of that name exists.
-    private static func unusedURL(for name: String, in folder: URL) -> URL {
-        let base = (name as NSString).deletingPathExtension
-        var url = folder.appendingPathComponent(name)
-        var number = 2
-        while FileManager.default.fileExists(atPath: url.path) {
-            url = folder.appendingPathComponent("\(base) \(number).pdf")
-            number += 1
-        }
-        return url
     }
 
     func deletePages(_ indexes: IndexSet? = nil) {

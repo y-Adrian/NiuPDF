@@ -2,13 +2,13 @@
 
 新会话先读本文，再按需查 [DEVELOPMENT_LOG.md](DEVELOPMENT_LOG.md)（每阶段的决策、根因与验证）和 [ROADMAP.md](ROADMAP.md)。需求见 [产品需求文档.md](产品需求文档.md)。
 
-## 当前状态（2026-11-11，分支 `leading`；阶段 3G-1 至 3G-5、3H-1 至 3H-4 已合并为一次提交，未推送）
+## 当前状态（2026-11-11，分支 `leading`；3G-1 至 3H-5 均已提交，未推送）
 
-已完成：阅读与搜索（含正则/全词）、标准批注（高亮/下划线/波浪线/删除线/笔记/文本框/手绘/形状，可调颜色、粗细、字体；选中文字后的浮动标注工具条；不透明度与常用样式；文本框背景与边框）、批注编辑（选择、缩放、移动、复制粘贴、批量删除）、页面管理（旋转、删除、插入、移动、提取）、用户书签（⌘B，存于应用、按文件）、批注列表按类型/颜色/作者筛选、加密文档密码可记在钥匙串（设置中可忘记）、设置/更改/移除打开密码与权限限制（受限文件只读并有提示条）、所选文字的系统翻译浮层与朗读、导出时减小文件大小、裁切页面、拆分文档、幻灯片放映、插入图片、网址链接、签名（手写/键入/图片，可存储复用）、水印、页眉页脚与页码、表单填写（存储时修复 PDFKit 写坏的单选组）、导出文字（TXT/RTF/Word）、图片转 PDF（合并窗口）、识别文字（Vision，加不可见文字层）、涂黑（标记后应用，页面重画为图像）、合并文档（合并窗口：排序、页码范围、逐页预览）、导出（PDF 副本/扁平化、图片）、多标签页与多窗口、开始页与最近文件、自动存储、中英文界面与设置（⌘,）、打印、常用快捷键。Debug/Release、签名/未签名构建均 0 警告；36 项核心测试通过。
+已完成：阅读与搜索（含正则/全词）、标准批注（高亮/下划线/波浪线/删除线/笔记/文本框/手绘/形状，可调颜色、粗细、字体；选中文字后的浮动标注工具条；不透明度与常用样式；文本框背景与边框）、批注编辑（选择、缩放、移动、复制粘贴、批量删除）、页面管理（旋转、删除、插入、移动、提取）、用户书签（⌘B，存于应用、按文件）、批注列表按类型/颜色/作者筛选、加密文档密码可记在钥匙串（设置中可忘记）、设置/更改/移除打开密码与权限限制（受限文件只读并有提示条）、所选文字的系统翻译浮层与朗读、导出时减小文件大小、裁切页面、拆分文档、幻灯片放映、插入图片、网址链接、签名（手写/键入/图片，可存储复用）、水印、页眉页脚与页码、表单填写（存储时修复 PDFKit 写坏的单选组）、导出文字（TXT/RTF/Word）、图片转 PDF（合并窗口）、识别文字（Vision，加不可见文字层）、涂黑（标记后应用，页面重画为图像）、批量处理（压缩/识别文字/页码/水印/导出文字）、合并文档（合并窗口：排序、页码范围、逐页预览）、导出（PDF 副本/扁平化、图片）、多标签页与多窗口、开始页与最近文件、自动存储、中英文界面与设置（⌘,）、打印、常用快捷键。Debug/Release、签名/未签名构建均 0 警告；37 项核心测试通过。
 
 ## 下一步候选（按优先级）
 
-1. PDFgear 差距第 2 组（表单 3H-1、转文本与图片转 PDF 3H-2、OCR 3H-3、涂黑 3H-4 已完成）：剩批量处理（建议：对多个文件依次执行压缩、加水印/页眉页脚、识别文字、转图片/文字，复用现有 Core 函数，不打开窗口）；涂黑的“搜索并涂黑全部”。
+1. PDFgear 差距第 2 组已全部完成（3H-1 至 3H-5）。可补：涂黑的“搜索并涂黑全部”；批量处理加密文件、多操作组合。
 2. 第 3 组（困难）：修改原有文字（PDFKit 不能改内容流）、PDF 转 Office、创建表单、证书签名、本地 AI 摘要；页内链接（需修复 PDFKit 写坏页面引用的问题，见下方坑）。
 3. U-04 补全：双指旋转手势（P0）；幻灯片的触控板手势翻页。
 4. 需要用户确认的项：见 DEVELOPMENT_LOG 各阶段未勾选项（3F-4 起），主要是拖动、手感、沙盒中的文件夹与面板、在其他应用中的显示。
@@ -51,6 +51,7 @@
 - 表单：PDFKit 自己编辑域并登记撤销，改值发 `PDFFormDidChangeValue`（对象为文稿）；改过的复选/单选按钮被 PDFKit 写坏（导出名变 “Yes”，单选组重开后同名），存储与导出副本后由 `ButtonFieldRepair` 追加增量更新修复（加密文件除外）。受限文件中点表单域被拦截。
 - PDFKit 实时 OCR：应用中 `PDFView` 显示过或搜索过的纯图片页面，PDFKit 会自动识别并把文字注入该页（`string`、`pageRef` 内容流），存储时可能写出也可能不写；`saveTextFromOCROption` 只对这些页面有效。判断“页面是否真有文字”要用写出再读回的副本（`TextRecognizer.hasText` 扫描内容流）。
 - `replacePages`（`PageOperations.swift`）用新页面替换旧页面并移交批注对象（`leaving` 中的留在旧页），撤销时移回；识别文字与涂黑用它。替换后 `cacheDisplay` 截图仍显示旧页面内容，验证用像素渲染或写出的文件。
+- Quartz“Reduce File Size”滤镜会让图片少的小文件变大（2 KB → 18 KB）；批量处理中不比原文件小就放弃输出。
 - `PDFPage(image:options:)` 只要传入选项（即使为空）就按像素定页面尺寸、忽略图片分辨率；要原尺寸用不带选项的 `PDFPage(image:)`。
 - 水印、页眉页脚是 `PageMark`（`PageMarks.swift`），设置以 JSON 存在 `/PaperplaneWatermark`、`/PaperplaneHeaderFooter` 中；打开时文字类重建为可更新的对象，屏幕上由覆盖层绘制；页面变化后 `refreshPageMarks` 重新编号与布置。几何在 Core 的 `PageMarkLayout`。
 - `CGRect` 的 width/height 总是非负，判断“剩余是否足够”要先算差值再建矩形（裁切曾因此出错）。
@@ -113,7 +114,7 @@ for target in ["Paperplane","PaperplaneCore"]:
         print(target, lang, "missing:", sorted(code-t), "extra:", sorted(t-code))
 ```
 
-新增工程文件的 ID 已用到 `…064`（Core `PageTools.swift` 050、`PageToolSheets.swift` 051、`Slideshow.swift` 052、`InsertTools.swift` 053、`Signatures.swift` 054、Core `PageMarkLayout.swift` 055、`PageMarks.swift` 056、`PageMarkSheets.swift` 057、Core `ButtonFieldRepair.swift` 058、`FormFields.swift` 059、Core `DocumentConverter.swift` 060、Core `TextRecognition.swift` 061、`TextRecognitionSheet.swift` 062、Core `Redaction.swift` 063、`Redactions.swift` 064），下一个从 `100000000000000000000065` / `200000000000000000000065` 开始（共 24 位，注意别多写一个 0）。Core 文件登记在 Core Sources 构建阶段。
+新增工程文件的 ID 已用到 `…065`（Core `PageTools.swift` 050、`PageToolSheets.swift` 051、`Slideshow.swift` 052、`InsertTools.swift` 053、`Signatures.swift` 054、Core `PageMarkLayout.swift` 055、`PageMarks.swift` 056、`PageMarkSheets.swift` 057、Core `ButtonFieldRepair.swift` 058、`FormFields.swift` 059、Core `DocumentConverter.swift` 060、Core `TextRecognition.swift` 061、`TextRecognitionSheet.swift` 062、Core `Redaction.swift` 063、`Redactions.swift` 064、`BatchWindow.swift` 065），下一个从 `100000000000000000000066` / `200000000000000000000066` 开始（共 24 位，注意别多写一个 0）。Core 文件登记在 Core Sources 构建阶段。
 
 ### 旧做法：手工编译源码
 

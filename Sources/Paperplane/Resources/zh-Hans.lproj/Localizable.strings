@@ -443,3 +443,31 @@
 "Applying Redactions" = "正在应用涂黑";
 "Page %ld of %ld…" = "第 %ld 页（共 %ld 页）…";
 "Redaction Mark" = "涂黑标记";
+
+/* Batch processing */
+"%@ (Numbered)" = "%@（已加页码）";
+"%@ (Searchable)" = "%@（可搜索）";
+"%@ (Smaller)" = "%@（已压缩）";
+"%@ (Watermarked)" = "%@（已加水印）";
+"%ld files, %ld done" = "%ld 个文件，已完成 %ld 个";
+"Action" = "操作";
+"Add Page Numbers" = "添加页码";
+"Adds an invisible text layer to pages without text, so scanned files can be searched." = "为没有文字的页面加入不可见的文字层，使扫描文件可以搜索。";
+"All pages already have text." = "所有页面都已有文字。";
+"Batch Process" = "批量处理";
+"Batch Process…" = "批量处理…";
+"Choose…" = "选取…";
+"Drag PDFs here, or add them from your files." = "将 PDF 拖到这里，或从文件中添加。";
+"Encrypted files are skipped." = "已跳过加密的文件。";
+"Encrypted files are skipped. Existing files are not replaced." = "加密的文件会被跳过；不会替换已有的文件。";
+"Export Text" = "导出文字";
+"Failed" = "失败";
+"Format at the bottom center; {page} is the page number, {pages} the last page number." = "页码放在页面底部居中；{page} 为页码，{pages} 为最后一页的页码。";
+"Gray text across each page, turned 45°." = "每页加上倾斜 45° 的灰色文字。";
+"New files are saved in this folder. The originals are not changed." = "新文件存储在此文件夹中，原文件不会改变。";
+"No folder chosen" = "未选择文件夹";
+"Save To" = "存储到";
+"Skipped" = "已跳过";
+"Start" = "开始";
+"Reducing would not make this file smaller." = "压缩不会让这个文件变小。";
+"No text was found on the pages without text." = "在没有文字的页面上未识别出文字。";

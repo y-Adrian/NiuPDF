@@ -60,6 +60,22 @@ public enum DocumentConverter {
     }
 }
 
+extension DocumentConverter {
+    /// `name` in `folder`, numbered ("name 2.pdf") when a file of that name
+    /// exists, so nothing is replaced.
+    public static func unusedURL(for name: String, in folder: URL) -> URL {
+        let base = (name as NSString).deletingPathExtension
+        let pathExtension = (name as NSString).pathExtension
+        var url = folder.appendingPathComponent(name)
+        var number = 2
+        while FileManager.default.fileExists(atPath: url.path) {
+            url = folder.appendingPathComponent("\(base) \(number)" + (pathExtension.isEmpty ? "" : "." + pathExtension))
+            number += 1
+        }
+        return url
+    }
+}
+
 /// The page size for images made into PDF pages.
 public enum ImagePageSize: String, CaseIterable, Identifiable, Sendable {
     /// The image's own size, from its pixels and resolution.

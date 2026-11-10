@@ -443,3 +443,31 @@
 "Applying Redactions" = "Applying Redactions";
 "Page %ld of %ld…" = "Page %ld of %ld…";
 "Redaction Mark" = "Redaction Mark";
+
+/* Batch processing */
+"%@ (Numbered)" = "%@ (Numbered)";
+"%@ (Searchable)" = "%@ (Searchable)";
+"%@ (Smaller)" = "%@ (Smaller)";
+"%@ (Watermarked)" = "%@ (Watermarked)";
+"%ld files, %ld done" = "%ld files, %ld done";
+"Action" = "Action";
+"Add Page Numbers" = "Add Page Numbers";
+"Adds an invisible text layer to pages without text, so scanned files can be searched." = "Adds an invisible text layer to pages without text, so scanned files can be searched.";
+"All pages already have text." = "All pages already have text.";
+"Batch Process" = "Batch Process";
+"Batch Process…" = "Batch Process…";
+"Choose…" = "Choose…";
+"Drag PDFs here, or add them from your files." = "Drag PDFs here, or add them from your files.";
+"Encrypted files are skipped." = "Encrypted files are skipped.";
+"Encrypted files are skipped. Existing files are not replaced." = "Encrypted files are skipped. Existing files are not replaced.";
+"Export Text" = "Export Text";
+"Failed" = "Failed";
+"Format at the bottom center; {page} is the page number, {pages} the last page number." = "Format at the bottom center; {page} is the page number, {pages} the last page number.";
+"Gray text across each page, turned 45°." = "Gray text across each page, turned 45°.";
+"New files are saved in this folder. The originals are not changed." = "New files are saved in this folder. The originals are not changed.";
+"No folder chosen" = "No folder chosen";
+"Save To" = "Save To";
+"Skipped" = "Skipped";
+"Start" = "Start";
+"Reducing would not make this file smaller." = "Reducing would not make this file smaller.";
+"No text was found on the pages without text." = "No text was found on the pages without text.";

@@ -56,6 +56,11 @@ struct PaperplaneApp: App {
         }
         .defaultSize(width: 980, height: 640)
 
+        Window(L("Batch Process"), id: "batch") {
+            BatchWindow()
+        }
+        .defaultSize(width: 760, height: 480)
+
         // Adds "Settings…" with ⌘, to the app menu.
         Settings {
             SettingsView()
@@ -106,6 +111,7 @@ struct ReaderCommands: Commands {
             }
             Divider()
             Button(L("Merge PDFs…")) { openMergeWindow() }
+            Button(L("Batch Process…")) { openWindow(id: "batch") }
             Button(L("New PDF from Images…")) {
                 MergeModel.shared.presentImagePanel()
                 if !MergeModel.shared.items.isEmpty { openWindow(id: "merge") }
