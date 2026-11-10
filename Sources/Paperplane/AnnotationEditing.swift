@@ -64,6 +64,7 @@ extension ReaderLibrary {
     /// Selects an annotation; with `extending` (⇧-click, ⌘-click in the list)
     /// it is added to or removed from the selection.
     func select(_ annotation: PDFAnnotation, extending: Bool) {
+        guard canAnnotate else { return }
         if extending {
             if isSelected(annotation) {
                 selectedAnnotations.removeAll { $0 === annotation }
@@ -136,6 +137,7 @@ extension ReaderLibrary {
     /// Records a finished move, resize or nudge as one undo step. The
     /// annotations already show their new geometry.
     func commitGeometry(_ annotations: [PDFAnnotation], from originals: [AnnotationGeometry], actionName: String) {
+        guard canAnnotate else { return }
         let finals = annotations.map(AnnotationGeometry.init)
         guard zip(finals, originals).contains(where: { $0.bounds != $1.bounds || $0.start != $1.start || $0.end != $1.end }) else { return }
         pdfView?.undoManager?.registerUndo(withTarget: self) { target in
@@ -148,6 +150,7 @@ extension ReaderLibrary {
 
     /// Arrow keys: moves the selected drawings, shapes and text boxes.
     func nudgeSelection(dx: CGFloat, dy: CGFloat) {
+        guard canAnnotate else { return }
         let movable = selectedAnnotations.filter(Self.isMovable)
         guard !movable.isEmpty else { return }
         let originals = movable.map(AnnotationGeometry.init)
@@ -216,7 +219,7 @@ extension ReaderLibrary {
     /// they are shifted; on another page they keep their place.
     @discardableResult
     func pasteAnnotations() -> Bool {
-        guard canPasteAnnotations, let page = pasteTargetPage else { return false }
+        guard canAnnotate, canPasteAnnotations, let page = pasteTargetPage else { return false }
         let clipboard = AppModel.shared.annotationClipboard
         let model = AppModel.shared
         if clipboard.contains(where: { $0.sourcePage === page }) { model.pasteOffset += 12 }
@@ -236,7 +239,7 @@ extension ReaderLibrary {
     /// ⌘D: copies of the selection next to the originals, leaving the clipboard alone.
     func duplicateSelectedAnnotations() {
         let copyable = selectedAnnotations.filter(Self.isCopyable)
-        guard let page = copyable.first?.page else { return }
+        guard canAnnotate, let page = copyable.first?.page else { return }
         let sources = withNativeNotesRestored { copyable.filter { $0.page === page }.compactMap(Self.freshCopy) }
         _ = place(sources, on: page, offset: 12, actionName: L("Duplicate"))
     }
@@ -270,7 +273,7 @@ extension ReaderLibrary {
     @discardableResult
     func deleteSelectedAnnotations(actionName: String? = nil) -> Bool {
         let doomed = selectedAnnotations.filter { $0.page != nil }
-        guard !doomed.isEmpty else { return false }
+        guard canAnnotate, !doomed.isEmpty else { return false }
         commitPendingEdits?()
         var pages: [PDFPage] = []
         for annotation in doomed {

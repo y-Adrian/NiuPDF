@@ -8,3 +8,6 @@
 "Couldn’t finish writing the PDF. A verified copy of your changes was kept at %@." = "无法完成 PDF 写入。已校验的更改副本保存在 %@。";
 "Enter pages such as 1-3, 5 or 8-, between 1 and %ld." = "请输入 1 到 %ld 之间的页码，例如 1-3, 5 或 8-。";
 "The exported file couldn’t be written." = "无法写入导出的文件。";
+"Enter an open password, or restrict what readers may do." = "请输入打开密码，或限制读者可进行的操作。";
+"Restrictions need a permissions password." = "限制权限需要设置权限密码。";
+"The permissions password must differ from the open password, or anyone who can open the document could lift the restrictions." = "权限密码必须与打开密码不同，否则能打开文稿的人都能解除限制。";

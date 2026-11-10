@@ -80,11 +80,19 @@ public enum SafePDFFileStore {
         return result
     }
 
+    /// Writes with options only when given: passwords and restrictions, or
+    /// none at all to keep what the document already has.
+    private static func write(_ document: PDFDocument, to url: URL, options: [PDFDocumentWriteOption: Any]?) -> Bool {
+        guard let options else { return document.write(to: url) }
+        return document.write(to: url, withOptions: options)
+    }
+
     @discardableResult
     public static func save(
         _ document: PDFDocument,
         to url: URL,
-        expectedRevision: PDFFileRevision
+        expectedRevision: PDFFileRevision,
+        writeOptions: [PDFDocumentWriteOption: Any]? = nil
     ) throws -> PDFFileRevision {
         var updatedRevision: PDFFileRevision?
         var operationError: Error?
@@ -100,12 +108,12 @@ public enum SafePDFFileStore {
 
                 let beside = coordinatedURL.deletingLastPathComponent()
                     .appendingPathComponent(".\(coordinatedURL.lastPathComponent).paperplane-\(UUID().uuidString).tmp.pdf")
-                let replacesAtomically = document.write(to: beside)
+                let replacesAtomically = write(document, to: beside, options: writeOptions)
                 let candidate = replacesAtomically
                     ? beside
                     : FileManager.default.temporaryDirectory.appendingPathComponent("paperplane-\(UUID().uuidString).pdf")
                 temporaryURL = candidate
-                guard replacesAtomically || document.write(to: candidate) else {
+                guard replacesAtomically || write(document, to: candidate, options: writeOptions) else {
                     throw SafePDFFileStoreError.unableToWriteTemporary
                 }
                 guard let reopened = PDFDocument(url: candidate),

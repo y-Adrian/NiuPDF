@@ -119,11 +119,18 @@ struct ReaderCommands: Commands {
             Button(L("Export…")) { documentLibrary?.expandedMode = .export }
                 .keyboardShortcut("e", modifiers: [.command, .shift])
                 .disabled(knownEmpty)
+            Divider()
+            Button(library?.isPasswordProtected == true ? L("Change Password…") : L("Set Password…")) {
+                documentLibrary?.beginEditingPassword()
+            }
+            .disabled(knownEmpty)
+            Button(L("Remove Password…")) { documentLibrary?.confirmRemovingPassword() }
+                .disabled(knownEmpty || focusedLibrary.map { !$0.isPasswordProtected } ?? false)
         }
         CommandGroup(replacing: .printItem) {
             Button(L("Print…")) { documentLibrary?.printDocument() }
                 .keyboardShortcut("p", modifiers: .command)
-                .disabled(knownEmpty)
+                .disabled(knownEmpty || focusedLibrary.map { $0.document != nil && !$0.canPrint } ?? false)
         }
         CommandGroup(after: .pasteboard) {
             Button(L("Duplicate")) { documentLibrary?.duplicateSelectedAnnotations() }

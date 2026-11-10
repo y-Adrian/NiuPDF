@@ -51,7 +51,7 @@ extension ReaderLibrary {
     // MARK: Operations
 
     func rotatePages(_ indexes: IndexSet? = nil, by degrees: Int) {
-        guard let document else { return }
+        guard let document, canChangePages else { return }
         let pages = (indexes ?? targetPages).compactMap { document.page(at: $0) }
         guard !pages.isEmpty else { return }
         setRotations(pages, to: pages.map { ($0.rotation + degrees + 360) % 360 })
@@ -68,6 +68,7 @@ extension ReaderLibrary {
     }
 
     func deletePages(_ indexes: IndexSet? = nil) {
+        guard canChangePages else { return }
         commitPendingEdits?()
         let doomed = indexes ?? targetPages
         guard doomed.count < pageCount else {
@@ -80,7 +81,7 @@ extension ReaderLibrary {
 
     /// Inserts a blank page the size of its neighbour, after the given page.
     func insertBlankPage(after index: Int? = nil) {
-        guard document != nil else { return }
+        guard document != nil, canChangePages else { return }
         let position = (index ?? targetPages.last ?? currentPageIndex) + 1
         let neighbour = allPages[safe: position - 1] ?? allPages.first
         let page = PDFPage()
@@ -93,7 +94,7 @@ extension ReaderLibrary {
 
     /// Asks for PDFs and inserts all their pages after the target pages.
     func insertPagesFromFiles(at index: Int? = nil) {
-        guard document != nil else { return }
+        guard document != nil, canChangePages else { return }
         let panel = NSOpenPanel()
         panel.allowedContentTypes = [.pdf]
         panel.allowsMultipleSelection = true
@@ -105,7 +106,7 @@ extension ReaderLibrary {
     /// Inserts every page of the given PDFs at a page index, in file order;
     /// this is also how PDFs dropped on the thumbnails are merged in.
     func insertPages(from urls: [URL], at index: Int) {
-        guard document != nil else { return }
+        guard document != nil, canChangePages else { return }
         commitPendingEdits?()
         var inserted: [PDFPage] = []
         for url in urls {
@@ -178,7 +179,7 @@ extension ReaderLibrary {
 
     /// Makes the document's pages exactly `order`, then registers the inverse.
     func changePageOrder(to order: [PDFPage], actionName: String, selecting selection: IndexSet?) {
-        guard let document else { return }
+        guard let document, canChangePages else { return }
         let before = allPages
         guard order != before else { return }
         applyPageOrder(order, to: document)

@@ -235,7 +235,10 @@ final class ReaderLibrary: ObservableObject {
     }
     var isAnnotationBarVisible: Bool {
         get { expandedMode == .annotate }
-        set { expandedMode = newValue ? .annotate : (expandedMode == .annotate ? nil : expandedMode) }
+        set {
+            guard !newValue || canAnnotate else { return }
+            expandedMode = newValue ? .annotate : (expandedMode == .annotate ? nil : expandedMode)
+        }
     }
     /// Set by the PDF view: ends drags and inline text editing on a tool change.
     var onToolChange: (() -> Void)?
@@ -298,6 +301,13 @@ final class ReaderLibrary: ObservableObject {
         if case .paused = autosaveState { return true }
         return false
     }
+    /// The file asked for a password when it was opened.
+    @Published private(set) var requiresOpenPassword = false
+    /// What readers without the permissions password may do, when the file
+    /// restricts it and this window was opened without that password.
+    @Published private(set) var readerRestrictions: PDFPasswordSettings?
+    /// Shows the sheet that sets or changes the passwords.
+    @Published var isEditingPassword = false
     @Published var layoutMode: ReaderLayout = ReaderLayout(
         rawValue: UserDefaults.standard.string(forKey: "readerLayoutMode") ?? ""
     ) ?? .continuous {
@@ -311,6 +321,8 @@ final class ReaderLibrary: ObservableObject {
     private var scopedURL: URL?
     private var fileRevision: PDFFileRevision?
     private var pendingRestoredZoomScale: CGFloat?
+    /// The open password just written, so the reopened file can be checked as a reader.
+    private var pendingReaderPassword: String?
     private var observers: [NSObjectProtocol] = []
 
     init() {
@@ -350,7 +362,7 @@ final class ReaderLibrary: ObservableObject {
 
     /// Opens a file in this window, replacing its document. Each file comes
     /// back at the page and zoom it was last read at.
-    func open(_ url: URL, confirmingUnsavedChanges: Bool = true) {
+    func open(_ url: URL, confirmingUnsavedChanges: Bool = true, password knownPassword: String? = nil) {
         if confirmingUnsavedChanges { guard confirmDiscardingUnsavedChanges() else { return } }
         let didStartAccess = url.startAccessingSecurityScopedResource()
         let opened: (document: PDFDocument, revision: PDFFileRevision)
@@ -365,11 +377,18 @@ final class ReaderLibrary: ObservableObject {
 
         let previousPassword = documentPassword
         documentPassword = nil
-        if opened.document.isLocked, !unlock(opened.document, at: url) {
+        let wasLocked = opened.document.isLocked
+        if wasLocked, !unlock(opened.document, at: url, knownPassword: knownPassword) {
             Logger.opening.info("Password entry cancelled for \(url.lastPathComponent, privacy: .public)")
             documentPassword = previousPassword
             if didStartAccess { url.stopAccessingSecurityScopedResource() }
             return
+        }
+        // A file that opens freely may still restrict changes until its
+        // permissions password is given.
+        if !wasLocked, let knownPassword, opened.document.unlock(withPassword: knownPassword),
+           opened.document.permissionsStatus == .owner {
+            documentPassword = knownPassword
         }
 
         if let scopedURL { scopedURL.stopAccessingSecurityScopedResource() }
@@ -377,6 +396,7 @@ final class ReaderLibrary: ObservableObject {
         // never stopped a second time on the next open.
         scopedURL = didStartAccess ? url : nil
         pdfView?.undoManager?.removeAllActions(withTarget: self)
+        noteProtection(of: opened.document, wasLocked: wasLocked, at: url)
         resetNoteIconState()
         changeCount = 0
         savedChangeCount = 0
@@ -392,6 +412,8 @@ final class ReaderLibrary: ObservableObject {
         }
         document = opened.document
         fileURL = url
+        // The annotation tools stay closed while the file forbids annotations.
+        if !canAnnotate, expandedMode == .annotate { expandedMode = nil }
         fileRevision = opened.revision
         pageCount = opened.document.pageCount
         let remembered = ReadingPositions.position(for: url)
@@ -412,7 +434,11 @@ final class ReaderLibrary: ObservableObject {
     }
 
     /// Unlocks an encrypted PDF with its saved or entered password; false when the user cancels.
-    func unlock(_ document: PDFDocument, at url: URL) -> Bool {
+    func unlock(_ document: PDFDocument, at url: URL, knownPassword: String? = nil) -> Bool {
+        if let knownPassword, document.unlock(withPassword: knownPassword) {
+            documentPassword = knownPassword
+            return true
+        }
         guard let password = Self.askForPassword(unlocking: document, at: url) else { return false }
         // Kept in memory only, to unlock the copies that exports render from.
         documentPassword = password
@@ -525,6 +551,10 @@ final class ReaderLibrary: ObservableObject {
     /// draws on screen are included.
     func printDocument() {
         guard let document else { return }
+        guard canPrint else {
+            errorMessage = L("This document doesn’t allow printing.")
+            return
+        }
         commitPendingEdits?()
         guard let snapshot = exportSnapshot(of: document),
               let operation = snapshot.value.printOperation(for: NSPrintInfo.shared, scalingMode: .pageScaleToFit, autoRotate: true) else {
@@ -705,6 +735,7 @@ final class ReaderLibrary: ObservableObject {
     }
 
     private func editMarkup(_ tool: AnnotationTool, color: MarkupColor, in selection: PDFSelection, intent: MarkupIntent) {
+        guard canAnnotate else { return }
         lastMarkupTool = tool
         let styled = color.nsColor.withAlphaComponent(opacity(for: tool))
         recordAnnotationEdit(tool.title, pages: selection.pages) {
@@ -813,6 +844,7 @@ final class ReaderLibrary: ObservableObject {
     /// Notes belong to markup, as in PDF Expert: edit the note of the markup under
     /// the selection, or highlight the selection first and attach the note to it.
     func addNote(in selection: PDFSelection) {
+        guard canAnnotate else { return }
         pdfView?.clearSelection()
         if let existing = markups(in: selection).first {
             onEditAnnotation?(existing)
@@ -835,6 +867,7 @@ final class ReaderLibrary: ObservableObject {
     }
 
     func removeNote(in selection: PDFSelection) {
+        guard canAnnotate else { return }
         guard let markup = notedMarkup(in: selection) else { return }
         setNote(markup, to: "")
         pdfView?.clearSelection()
@@ -843,6 +876,7 @@ final class ReaderLibrary: ObservableObject {
     /// Called when the editor popover closes. Empty notes are not kept: a pending
     /// "Add Note" highlight is dropped and an empty standalone note is deleted.
     func finishEditing(_ annotation: PDFAnnotation, note: String) {
+        guard canAnnotate else { return }
         let text = note.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "" : note
         if let pending = pendingCreation, pending.annotation === annotation {
             pendingCreation = nil
@@ -864,6 +898,7 @@ final class ReaderLibrary: ObservableObject {
     }
 
     func setNote(_ annotation: PDFAnnotation, to text: String) {
+        guard canAnnotate else { return }
         let previous = note(of: annotation)
         guard previous != text else { return }
         storeNote(text, for: annotation)
@@ -875,6 +910,7 @@ final class ReaderLibrary: ObservableObject {
     }
 
     func setColor(_ annotation: PDFAnnotation, to color: MarkupColor) {
+        guard canAnnotate else { return }
         if let tool = MarkupEngine.tool(of: annotation) {
             setColor(color, for: tool)
         } else if ["FreeText", "Ink", "Square", "Circle", "Line"].contains(annotation.type ?? "") {
@@ -895,6 +931,7 @@ final class ReaderLibrary: ObservableObject {
     /// Changes one annotation's opacity, which also becomes the default for
     /// new annotations of its kind.
     func setOpacity(_ annotation: PDFAnnotation, to opacity: CGFloat) {
+        guard canAnnotate else { return }
         let current = displayColor(of: annotation)
         let previous = current.alphaComponent
         guard abs(previous - opacity) > 0.005 else { return }
@@ -929,6 +966,7 @@ final class ReaderLibrary: ObservableObject {
     }
 
     func deleteAnnotation(_ annotation: PDFAnnotation) {
+        guard canAnnotate else { return }
         if let pending = pendingCreation, pending.annotation === annotation {
             pendingCreation = nil
             pending.edit.revert()
@@ -1037,6 +1075,7 @@ final class ReaderLibrary: ObservableObject {
 
     /// Places a standalone note centered on a page point and opens its editor.
     func addStandaloneNote(at point: CGPoint, on page: PDFPage) {
+        guard canAnnotate else { return }
         let side: CGFloat = 24
         let note = PDFAnnotation(
             bounds: CGRect(x: point.x - side / 2, y: point.y - side / 2, width: side, height: side),
@@ -1102,6 +1141,7 @@ final class ReaderLibrary: ObservableObject {
     /// Ends inline editing of a text box: commits a new box with text as one
     /// undo step, drops an empty new box, and deletes an emptied existing one.
     func finishTextBox(_ box: PDFAnnotation, text: String, bounds: CGRect) {
+        guard canAnnotate else { return }
         let isEmpty = text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
         if let pending = pendingCreation, pending.annotation === box {
             pendingCreation = nil
@@ -1138,7 +1178,7 @@ final class ReaderLibrary: ObservableObject {
 
     /// Adds a freehand drawing through page points.
     func addInk(through points: [CGPoint], on page: PDFPage) {
-        guard points.count > 1 else { return }
+        guard canAnnotate, points.count > 1 else { return }
         let path = NSBezierPath()
         path.move(to: points[0])
         for point in points.dropFirst() { path.line(to: point) }
@@ -1161,6 +1201,7 @@ final class ReaderLibrary: ObservableObject {
 
     /// Adds a rectangle, ellipse or arrow dragged from `start` to `end`.
     func addShape(_ tool: AnnotationTool, from start: CGPoint, to end: CGPoint, on page: PDFPage) {
+        guard canAnnotate else { return }
         let rect = CGRect(x: min(start.x, end.x), y: min(start.y, end.y), width: abs(end.x - start.x), height: abs(end.y - start.y))
         guard max(rect.width, rect.height) >= 4 else { return }
         let shape: PDFAnnotation
@@ -1213,6 +1254,7 @@ final class ReaderLibrary: ObservableObject {
     }
 
     func setStrokeWidth(_ annotation: PDFAnnotation, to width: CGFloat) {
+        guard canAnnotate else { return }
         let previous = annotation.border?.lineWidth ?? 1
         guard abs(previous - width) > 0.01 else { return }
         strokeWidth = width
@@ -1251,6 +1293,7 @@ final class ReaderLibrary: ObservableObject {
     }
 
     func setBackground(of box: PDFAnnotation, to color: MarkupColor?) {
+        guard canAnnotate else { return }
         let previous = Self.background(of: box)
         guard previous?.hex != color?.hex else { return }
         textBoxBackground = color
@@ -1267,6 +1310,7 @@ final class ReaderLibrary: ObservableObject {
     }
 
     func setBorderWidth(of box: PDFAnnotation, to width: CGFloat) {
+        guard canAnnotate else { return }
         let previous = box.border?.lineWidth ?? 0
         guard abs(previous - width) > 0.01 else { return }
         textBoxBorderWidth = width
@@ -1284,6 +1328,7 @@ final class ReaderLibrary: ObservableObject {
     }
 
     func setFont(of box: PDFAnnotation, family: String?, size: CGFloat) {
+        guard canAnnotate else { return }
         let previous = (family: Self.fontFamily(of: box), size: box.font?.pointSize ?? Self.textBoxFontSize)
         guard previous.family != family || abs(previous.size - size) > 0.01 else { return }
         textFontFamily = family
@@ -1720,6 +1765,10 @@ final class ReaderLibrary: ObservableObject {
     /// saved under a chosen name; several go into a chosen folder.
     func exportImages() {
         guard let document, exportProgress == nil else { return }
+        guard canCopy else {
+            errorMessage = L("This document doesn’t allow copying its content, so its pages can’t be exported as images.")
+            return
+        }
         commitPendingEdits?()
         let pages: [Int]
         switch imageExportRange {
@@ -1862,8 +1911,67 @@ final class ReaderLibrary: ObservableObject {
         }
     }
 
+    /// Records how the opened file is protected. Restrictions show only without
+    /// the permissions password, since with it PDFKit grants everything; a
+    /// file that opens without a password is then checked again as a reader.
+    private func noteProtection(of document: PDFDocument, wasLocked: Bool, at url: URL) {
+        requiresOpenPassword = wasLocked
+        var reader = document
+        if document.isEncrypted, document.permissionsStatus == .owner, let fresh = PDFDocument(url: url),
+           !fresh.isLocked || pendingReaderPassword.map({ fresh.unlock(withPassword: $0) }) == true {
+            reader = fresh
+        }
+        pendingReaderPassword = nil
+        let restricted = reader.isEncrypted && reader.permissionsStatus != .owner
+            && !(reader.allowsPrinting && reader.allowsCopying && reader.allowsCommenting
+                 && reader.allowsDocumentChanges && reader.allowsDocumentAssembly)
+        readerRestrictions = restricted ? PDFPasswordSettings(
+            restrictsPermissions: true,
+            allowsPrinting: reader.allowsPrinting,
+            allowsCopying: reader.allowsCopying,
+            allowsCommenting: reader.allowsCommenting,
+            allowsChanges: reader.allowsDocumentChanges && reader.allowsDocumentAssembly
+        ) : nil
+    }
+
+    /// Unlocks the restrictions with the permissions password; false when it
+    /// does not grant full access.
+    func liftRestrictions(with password: String) -> Bool {
+        guard let document, let fileURL else { return false }
+        if document.unlock(withPassword: password), document.permissionsStatus == .owner {
+            documentPassword = password
+            objectWillChange.send()
+            return true
+        }
+        // PDFKit may not raise an open document's access; check the password
+        // on a fresh copy and reopen with it. Nothing is unsaved: edits were blocked.
+        guard let fresh = PDFDocument(url: fileURL), fresh.unlock(withPassword: password), fresh.permissionsStatus == .owner else { return false }
+        open(fileURL, confirmingUnsavedChanges: false, password: password)
+        return self.document?.permissionsStatus == .owner
+    }
+
+    /// Writes the document with new passwords and restrictions, or with none,
+    /// then reopens it with `password` so this window holds the file as written.
+    func rewriteProtection(options: [PDFDocumentWriteOption: Any], reopeningWith password: String?, readerPassword: String? = nil) throws {
+        commitPendingEdits?()
+        guard let document, let fileURL, let fileRevision else { throw SafePDFFileStoreError.unreadablePDF }
+        autosaveTask?.cancel()
+        self.fileRevision = try withNativeNotesRestored {
+            try SafePDFFileStore.save(document, to: fileURL, expectedRevision: fileRevision, writeOptions: options)
+        }
+        savedChangeCount = changeCount
+        hasUnsavedChanges = false
+        pendingReaderPassword = readerPassword
+        open(fileURL, confirmingUnsavedChanges: false, password: password)
+    }
+
     private func writeDocument() throws {
         guard let document, let fileURL, let fileRevision else { throw SafePDFFileStoreError.unreadablePDF }
+        // PDFKit leaves out annotation and page changes that the document's
+        // restrictions forbid, so refuse rather than lose them silently.
+        if changeCount != savedChangeCount, !canAnnotate || !canChangePages {
+            throw DocumentProtectionError.restricted
+        }
         autosaveTask?.cancel()
         self.fileRevision = try withNativeNotesRestored {
             try SafePDFFileStore.save(document, to: fileURL, expectedRevision: fileRevision)

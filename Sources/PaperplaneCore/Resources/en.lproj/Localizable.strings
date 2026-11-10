@@ -8,3 +8,6 @@
 "Couldn’t finish writing the PDF. A verified copy of your changes was kept at %@." = "Couldn’t finish writing the PDF. A verified copy of your changes was kept at %@.";
 "Enter pages such as 1-3, 5 or 8-, between 1 and %ld." = "Enter pages such as 1-3, 5 or 8-, between 1 and %ld.";
 "The exported file couldn’t be written." = "The exported file couldn’t be written.";
+"Enter an open password, or restrict what readers may do." = "Enter an open password, or restrict what readers may do.";
+"Restrictions need a permissions password." = "Restrictions need a permissions password.";
+"The permissions password must differ from the open password, or anyone who can open the document could lift the restrictions." = "The permissions password must differ from the open password, or anyone who can open the document could lift the restrictions.";

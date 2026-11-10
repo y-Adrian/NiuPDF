@@ -225,9 +225,11 @@ private final class MarkupPDFView: PDFView, AnnotationOverlayHost {
     /// or in `mouseUp`, whichever comes.
     override func mouseDown(with event: NSEvent) {
         selectionToolbar.hide()
-        if toolHandler.mouseDown(event) { return }
+        // A file that forbids annotations only selects text.
+        let canAnnotate = readerLibrary?.canAnnotate ?? false
+        if canAnnotate, toolHandler.mouseDown(event) { return }
         let tool = readerLibrary?.activeTool ?? .select
-        pendingMarkupClick = tool == .select && event.clickCount == 1 ? markup(at: event) : nil
+        pendingMarkupClick = canAnnotate && tool == .select && event.clickCount == 1 ? markup(at: event) : nil
         awaitsToolSelection = tool.marksText
         super.mouseDown(with: event)
         if mouseUpAlreadyHandled() {
@@ -302,6 +304,7 @@ private final class MarkupPDFView: PDFView, AnnotationOverlayHost {
     // otherwise Copy copies selected text as before.
     override func copy(_ sender: Any?) {
         if readerLibrary?.copySelectedAnnotations() == true { return }
+        guard readerLibrary?.canCopy == true else { return NSSound.beep() }
         super.copy(sender)
     }
 
@@ -319,7 +322,7 @@ private final class MarkupPDFView: PDFView, AnnotationOverlayHost {
     @objc func validateMenuItem(_ menuItem: NSMenuItem) -> Bool {
         switch menuItem.action {
         case #selector(copy(_:)):
-            return readerLibrary?.hasCopyableSelection == true || pdfViewValidates(menuItem)
+            return readerLibrary?.hasCopyableSelection == true || (readerLibrary?.canCopy == true && pdfViewValidates(menuItem))
         case #selector(cut(_:)):
             return readerLibrary?.hasCopyableSelection == true
         case #selector(paste(_:)):
@@ -351,7 +354,7 @@ private final class MarkupPDFView: PDFView, AnnotationOverlayHost {
 
     /// Text selected with the select tool gets the floating markup row.
     private func showSelectionToolbarIfNeeded() {
-        guard readerLibrary?.activeTool == .select,
+        guard readerLibrary?.canAnnotate == true, readerLibrary?.activeTool == .select,
               let selection = currentSelection,
               !(selection.string ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
         selectionToolbar.show(for: selection)
@@ -382,7 +385,7 @@ private final class MarkupPDFView: PDFView, AnnotationOverlayHost {
     }
 
     func editAnnotation(_ annotation: PDFAnnotation) {
-        guard let readerLibrary, window != nil, let page = annotation.page else { return }
+        guard let readerLibrary, readerLibrary.canAnnotate, window != nil, let page = annotation.page else { return }
         editorPopover?.close()
         let controller = AnnotationEditorController(annotation: annotation, library: readerLibrary)
         let popover = NSPopover()
@@ -400,11 +403,16 @@ private final class MarkupPDFView: PDFView, AnnotationOverlayHost {
 
     override func menu(for event: NSEvent) -> NSMenu? {
         selectionToolbar.hide()
-        guard let selection = selectionForContextMenu(at: event),
+        guard readerLibrary?.canAnnotate == true, let selection = selectionForContextMenu(at: event),
               !(selection.string ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
         else {
             contextMenuSelection = nil
-            return super.menu(for: event)
+            // PDFKit still offers its own markup items on existing markup, also
+            // where the file forbids annotations; they would edit the document
+            // around this app's undo, saving and restrictions.
+            let menu = super.menu(for: event)
+            if let menu { removeNativeAnnotationItems(from: menu) }
+            return menu
         }
 
         contextMenuSelection = selection

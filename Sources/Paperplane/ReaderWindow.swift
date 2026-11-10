@@ -13,6 +13,10 @@ struct ReaderWindow: View {
         VStack(spacing: 0) {
             toolbar
             Divider()
+            if let message = library.restrictionMessage {
+                RestrictionBar(message: message)
+                Divider()
+            }
             if library.isAnnotationBarVisible, library.document != nil {
                 AnnotationToolBar()
                 Divider()
@@ -68,6 +72,10 @@ struct ReaderWindow: View {
         .background(Color(nsColor: .windowBackgroundColor))
         .onChange(of: library.currentPageIndex) { value in pageInput = "\(value + 1)" }
         .onDrop(of: [UTType.fileURL], isTargeted: $isDropTargeted, perform: handleDrop)
+        .sheet(isPresented: $library.isEditingPassword) {
+            PasswordSheet(current: library.readerRestrictions, isChange: library.isPasswordProtected)
+                .environmentObject(library)
+        }
         .alert(L("Operation Failed"), isPresented: Binding(
             get: { library.errorMessage != nil },
             set: { if !$0 { library.errorMessage = nil } }
