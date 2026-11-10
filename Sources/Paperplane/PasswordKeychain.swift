@@ -43,13 +43,13 @@ enum PasswordKeychain {
 
     @discardableResult
     static func save(_ password: String, for url: URL) -> Bool {
-        let data = Data(password.utf8)
         let existing = query(account: key(for: url))
-        if SecItemUpdate(existing as CFDictionary, [kSecValueData as String: data] as CFDictionary) == errSecSuccess {
-            return true
-        }
+        // Replace rather than update: an item keeps the access list of the
+        // build that created it, so after a rebuild an updated item could be
+        // written but not read back. Deleting it needs no permission.
+        SecItemDelete(existing as CFDictionary)
         var item = existing
-        item[kSecValueData as String] = data
+        item[kSecValueData as String] = Data(password.utf8)
         // Shown in Keychain Access.
         item[kSecAttrLabel as String] = "Paperplane: " + url.lastPathComponent
         guard SecItemAdd(item as CFDictionary, nil) == errSecSuccess else { return false }

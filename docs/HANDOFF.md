@@ -2,7 +2,7 @@
 
 新会话先读本文，再按需查 [DEVELOPMENT_LOG.md](DEVELOPMENT_LOG.md)（每阶段的决策、根因与验证）和 [ROADMAP.md](ROADMAP.md)。需求见 [产品需求文档.md](产品需求文档.md)。
 
-## 当前状态（2026-11-10，分支 `leading`，最新提交 `6b53b31`（N-04），S-02 已完成待提交，未推送）
+## 当前状态（2026-11-10，分支 `leading`，最新提交 `78a8629`（S-02），交互验证与钥匙串修复待提交，未推送）
 
 已完成：阅读与搜索（含正则/全词）、标准批注（高亮/下划线/波浪线/删除线/笔记/文本框/手绘/形状，可调颜色、粗细、字体；选中文字后的浮动标注工具条；不透明度与常用样式；文本框背景与边框）、批注编辑（选择、缩放、移动、复制粘贴、批量删除）、页面管理（旋转、删除、插入、移动、提取）、用户书签（⌘B，存于应用、按文件）、批注列表按类型/颜色/作者筛选、加密文档密码可记在钥匙串（设置中可忘记）、合并文档（合并窗口：排序、页码范围、逐页预览）、导出（PDF 副本/扁平化、图片）、多标签页与多窗口、开始页与最近文件、自动存储、中英文界面与设置（⌘,）、打印、常用快捷键。Debug/Release、签名/未签名构建均 0 警告；9 项核心测试通过。
 
@@ -10,7 +10,7 @@
 
 1. U-04 补全：双指旋转手势（P0）。代码里没有 `rotate(with:)` 处理，双指缩放与智能缩放由 PDFView 自带；可做成旋转到 ±90° 时旋转当前页（走 `rotatePages`，可撤销）。动手前先在真机确认 PDFView 是否已有内置行为。
 2. P1：OCR、表单填写与签名、压缩、密码保护、夜间模式、分屏、链接、标注摘要导出。
-3. 需要用户在实际应用中确认的未勾选项（DEVELOPMENT_LOG 阶段 3D-3 起：合并窗口、浮动工具条、不透明度、文本框样式、波浪线、书签重命名、批注筛选浮层、密码框与已存储的密码）。这些只能由用户操作确认，不必等它们再开工。
+3. 需要用户确认的项（见 DEVELOPMENT_LOG 阶段 3F-4 最后一项）：合并窗口的拖动排序与从访达拖入、沙盒下合并后的存储面板、用户那份文档上的波浪线、各项手感。其余交互已用事件注入探针验证。不必等它们再开工。
 
 ## 项目约定
 
@@ -41,7 +41,8 @@
 - SwiftUI 在新窗口第一次布局时（`NSHostingView.updateAnimatedWindowSize`）把它调成内容的初始尺寸；新窗口并入标签组要延后一轮主线程循环（见 `AppModel.windowDidAppear`），否则整个标签组会被缩小。
 - `PDFView.visibleRect` 可能比视图本身还大；求 PDF 视图的可视区域用 `bounds`。
 - 颜色比较：调色板是校准 RGB，PDFKit 读回为设备 RGB、分量相同（可能差 1/255），所以按存储的分量比较，不要都转换到设备 RGB（见 `MarkupColor(nearest:among:)`）。`NSColor.black` 等是灰度色，直接读 `redComponent` 会抛异常。PDFKit 新建批注时自动填 `userName`（系统用户全名）。
-- 钥匙串：用登录钥匙串的通用密码项（`PasswordKeychain`），沙盒内可用；数据保护钥匙串需要团队 ID，临时签名用不了。临时签名重新构建后读取旧项可能弹系统授权框。
+- 钥匙串：用登录钥匙串的通用密码项（`PasswordKeychain`），沙盒内可用；数据保护钥匙串需要团队 ID，临时签名用不了。项的访问控制绑定创建它的构建：工程未设团队，Xcode 构建为临时签名，重新构建后读取旧项会弹系统授权框（已验证）；`SecItemUpdate` 不会改访问控制，所以存储一律先删后建。
+- PDFKit 写出含文本框的文件时，外观流里嵌入字体的数据流缺 `/Length`（与字体无关），Ghostscript 能自动修复。
 - `PDFView` 未公开 `validateMenuItem`，需通过运行时调用其实现。
 - 沙盒应用打印需要 `com.apple.security.print`；沙盒只授权所选文件而非其文件夹。
 
@@ -66,6 +67,19 @@ log show --last 10m --info --predicate 'subsystem == "app.paperplane.reader" AND
 4. 直接运行可执行文件（不要用 `open`，用户可能正从 Xcode 运行着正式应用）：`PP_DIR=… …/Paperplane.app/Contents/MacOS/Paperplane -NSQuitAlwaysKeepsWindows NO -ApplePersistenceIgnoreState YES -AppleLanguages "(zh-Hans)" > log 2>&1 &`，用带超时的循环等待并 `grep PPDEBUG`（管道里的 grep 会缓冲，进程挂起时看不到输出，所以先写文件）。
 5. 注意：撤销要 `groupsByEvent = false` 并给每步手动开关分组，否则抛 “must begin a group”；嵌套函数要标 `@MainActor`；`hasUnsavedChanges` 等只读属性不能在探针里改；窗口打开后当前页可能不是第 1 页（粘贴等会落到当前页）；整页逐像素用 `colorAt` 太慢，用 `bitmapData` 并只扫描相关区域。
 6. 截图（浮层为半透明材质，`cacheDisplay` 截不到其中的主色文字，先给内容视图设不透明的 `layer.backgroundColor` 再截）：`contentView.bitmapImageRepForCachingDisplay` + `cacheDisplay` 写 PNG 后用 Read 查看；子窗口（浮动工具条）从 `window.childWindows` 取；视觉材质在截图中呈灰底属正常。
+
+### 事件注入探针：验证真实交互（阶段 3F-4 起）
+
+脚本与探针代码在会话共享笔记目录 `ui-event-probe/`（仓库外）。要点：
+
+- 在探针应用内用 `NSEvent.mouseEvent` / `keyEvent` + `NSApp.postEvent` 向它自己的窗口发送事件；一次排入按下、若干拖动、松开即可，PDFView 的拖选跟踪会依次取走。窗口坐标由页面坐标经 `view.convert(_:from: page)` 与 `view.convert(_:to: nil)` 得到。
+- 用 `open -n <探针.app> --env PP_DIR=… --stdout … --args …` 启动（独立 bundle ID 时可用）。直接从终端运行可执行文件，应用约 1 秒后就被其他应用夺走激活状态，浮动工具条（`hidesOnDeactivate`）与临时气泡随之消失。
+- SwiftUI 只在有辅助功能客户端时生成辅助功能树，进程内查不到控件；在探针副本里给控件加 `.probeFrame("id")`（不接受点击的背景 NSView）取窗口坐标。
+- 探针任务运行在主队列上，NSAlert 模态循环里不会再执行 GCD 主队列块；要在弹窗期间操作，用同时加入 `.common` 与 `.modalPanel` 模式的 `Timer`。
+- 安全输入框只接受第一个合成按键；密码直接设 `stringValue`，再用鼠标点按钮。
+- 编辑气泡（`_NSPopoverWindow`）也是窗口的子面板，找浮动工具条时要排除它。
+- `pkill -f`/`pgrep -f` 的模式会匹配到执行它的 shell，写成 `"[u]i/dd/Build/Products"`。
+- 其他阅读器的效果：`gs -sDEVICE=png16m -r144 -o out.png file.pdf`（/usr/local/bin/gs），或用全新 `PDFDocument` 的 `page.draw` 渲染（即“预览”所见）后取像素。
 
 ### 摸清 PDFKit 行为：临时单元测试
 
