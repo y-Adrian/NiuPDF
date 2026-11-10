@@ -601,6 +601,16 @@ struct ThumbnailSidebar: View {
             insertionLine(visible: dropIndex == index)
             VStack(spacing: 6) {
                 thumbnail(for: page, selected: isSelected(index), revision: revision)
+                    .overlay(alignment: .topTrailing) {
+                        if library.bookmark(onPage: index) != nil {
+                            Image(systemName: "bookmark.fill")
+                                .font(.system(size: 13))
+                                .foregroundStyle(Color.accentColor)
+                                .padding(.trailing, 10)
+                                .offset(y: 2)
+                                .accessibilityLabel(L("Bookmarked"))
+                        }
+                    }
                 Text(L("Page %ld", index + 1))
                     .font(.caption)
                     .foregroundStyle(index == library.currentPageIndex ? Color.accentColor : .secondary)
@@ -722,38 +732,37 @@ private struct PageDropDelegate: DropDelegate {
     }
 }
 
+/// The outline tab: the reader's bookmarks, then the PDF's own contents.
 struct PDFOutlineSidebar: View {
     let document: PDFDocument
     let onSelect: (Int) -> Void
 
     var body: some View {
-        Group {
-            if let root = document.outlineRoot, root.numberOfChildren > 0 {
-                ScrollView {
-                    LazyVStack(alignment: .leading, spacing: 8) {
-                        ForEach(0..<root.numberOfChildren, id: \.self) { index in
-                            if let item = root.child(at: index) {
-                                PDFOutlineEntry(item: item, document: document, onSelect: onSelect)
+        ScrollView {
+            VStack(alignment: .leading, spacing: 12) {
+                BookmarkSection()
+                Divider()
+                VStack(alignment: .leading, spacing: 8) {
+                    Text(L("Contents"))
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(.secondary)
+                    if let root = document.outlineRoot, root.numberOfChildren > 0 {
+                        LazyVStack(alignment: .leading, spacing: 8) {
+                            ForEach(0..<root.numberOfChildren, id: \.self) { index in
+                                if let item = root.child(at: index) {
+                                    PDFOutlineEntry(item: item, document: document, onSelect: onSelect)
+                                }
                             }
                         }
+                    } else {
+                        Text(L("This PDF has no embedded outline."))
+                            .font(.caption2)
+                            .foregroundStyle(.tertiary)
+                            .fixedSize(horizontal: false, vertical: true)
                     }
-                    .padding(10)
                 }
-            } else {
-                VStack(spacing: 8) {
-                    Image(systemName: "list.bullet.indent")
-                        .font(.title3)
-                        .foregroundStyle(.tertiary)
-                    Text(L("No Outline"))
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                    Text(L("This PDF has no embedded outline."))
-                        .font(.caption2)
-                        .foregroundStyle(.tertiary)
-                        .multilineTextAlignment(.center)
-                }
-                .padding(12)
             }
+            .padding(10)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(Color(nsColor: .controlBackgroundColor))

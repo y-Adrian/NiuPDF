@@ -192,6 +192,14 @@ struct ReaderCommands: Commands {
             Button(L("Go to Page…")) { documentLibrary?.focusPageField = true }
                 .keyboardShortcut("g", modifiers: [.command, .option])
                 .disabled(knownEmpty)
+            Divider()
+            Button(library.map { $0.bookmark(onPage: $0.currentPageIndex) != nil } == true ? L("Remove Bookmark") : L("Add Bookmark")) {
+                documentLibrary?.toggleBookmarkOnCurrentPage()
+            }
+            .keyboardShortcut("b", modifiers: .command)
+            .disabled(knownEmpty)
+            Button(L("Show Bookmarks")) { library?.showSidebar(.outline) }
+                .disabled(knownEmpty)
         }
         CommandMenu(L("Pages")) {
             Button(L("Rotate Left")) { documentLibrary?.rotatePages(by: -90) }

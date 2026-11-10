@@ -37,7 +37,6 @@
 "Next Page" = "Next Page";
 "No Annotations Yet" = "No Annotations Yet";
 "No Document" = "No Document";
-"No Outline" = "No Outline";
 "No Results" = "No Results";
 "Note" = "Note";
 "OK" = "OK";
@@ -225,3 +224,13 @@
 "Light Green" = "Light Green";
 "Light Pink" = "Light Pink";
 "Light Gray" = "Light Gray";
+"Bookmarks" = "Bookmarks";
+"Contents" = "Contents";
+"Add Bookmark" = "Add Bookmark";
+"Remove Bookmark" = "Remove Bookmark";
+"Delete Bookmark" = "Delete Bookmark";
+"Show Bookmarks" = "Show Bookmarks";
+"Bookmark Name" = "Bookmark Name";
+"Bookmarked" = "Bookmarked";
+"Rename" = "Rename";
+"Press ⌘B to bookmark the current page." = "Press ⌘B to bookmark the current page.";

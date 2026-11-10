@@ -37,7 +37,6 @@
 "Next Page" = "下一页";
 "No Annotations Yet" = "还没有批注";
 "No Document" = "未打开文稿";
-"No Outline" = "没有文档大纲";
 "No Results" = "0 项";
 "Note" = "笔记";
 "OK" = "好";
@@ -225,3 +224,13 @@
 "Light Green" = "浅绿色";
 "Light Pink" = "浅粉色";
 "Light Gray" = "浅灰色";
+"Bookmarks" = "书签";
+"Contents" = "目录";
+"Add Bookmark" = "添加书签";
+"Remove Bookmark" = "移除书签";
+"Delete Bookmark" = "删除书签";
+"Show Bookmarks" = "显示书签";
+"Bookmark Name" = "书签名称";
+"Bookmarked" = "已加书签";
+"Rename" = "重命名";
+"Press ⌘B to bookmark the current page." = "按 ⌘B 为当前页添加书签。";

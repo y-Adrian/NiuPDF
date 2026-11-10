@@ -217,6 +217,7 @@ extension ReaderLibrary {
             if let page = document.page(at: index) { prepareNotes(on: page) }
         }
         selectedPages = (selection ?? []).filteredIndexSet { $0 < document.pageCount }
+        syncBookmarksToPages()
         currentPageIndex = min(currentPageIndex, max(document.pageCount - 1, 0))
         if !searchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { find(searchText) }
         pdfView?.layoutDocumentView()

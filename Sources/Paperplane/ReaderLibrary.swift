@@ -248,6 +248,10 @@ final class ReaderLibrary: ObservableObject {
     var draggedPages: IndexSet?
     @Published var isSidebarVisible = true
     @Published var sidebarMode: SidebarMode = .thumbnails
+    /// The open file's bookmarks; see Bookmarks.swift.
+    @Published var bookmarks: [PageBookmark] = []
+    /// The page each bookmark belongs to, so bookmarks follow moved pages.
+    var bookmarkPages: [UUID: PDFPage] = [:]
     @Published var errorMessage: String?
     /// Bumped after every annotation edit, undo and redo so views that list or
     /// render annotations (thumbnails, annotation list) refresh.
@@ -396,6 +400,7 @@ final class ReaderLibrary: ObservableObject {
         pageSelectionAnchor = nil
         selectedAnnotations = []
         errorMessage = nil
+        loadBookmarks()
         AppModel.shared.noteOpened(url)
         Logger.opening.info("Opened \(url.lastPathComponent, privacy: .public) (\(opened.document.pageCount) pages) in window \(self.window?.windowNumber ?? -1); window visible: \(self.window?.isVisible ?? false)")
     }
