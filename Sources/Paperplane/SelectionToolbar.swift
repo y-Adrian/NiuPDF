@@ -2,7 +2,7 @@ import AppKit
 import PDFKit
 
 /// A floating row of markup actions above text selected with the select tool:
-/// the markup tools, colors, a note and Copy, as in the context menu but
+/// a note and Copy, the markup tools, and colors, as in the context menu but
 /// one click away. It is a borderless child panel that never takes focus, so
 /// the PDF view keeps the selection and the keyboard.
 @MainActor
@@ -60,7 +60,13 @@ final class SelectionToolbar: NSObject {
 
     var isVisible: Bool { panel.isVisible }
 
+    /// Note and Copy first, then the markup tools, then their colors.
     private func buildRow() {
+        let copy = symbolButton("doc.on.doc", title: L("Copy"), action: #selector(copyText))
+        stack.addArrangedSubview(symbolButton("text.bubble", title: L("Add Note"), action: #selector(addNote)))
+        stack.addArrangedSubview(copy)
+        stack.setCustomSpacing(8, after: copy)
+
         toolButtons = Self.tools.map { tool in
             let button = MarkupToolIconButton(tool: tool, selected: false, target: self, action: #selector(pickTool(_:)))
             button.toolTip = tool.title
@@ -79,11 +85,8 @@ final class SelectionToolbar: NSObject {
             return button
         }
         swatches.forEach(stack.addArrangedSubview)
-        if let last = swatches.last { stack.setCustomSpacing(8, after: last) }
-
-        stack.addArrangedSubview(symbolButton("text.bubble", title: L("Add Note"), action: #selector(addNote)))
-        stack.addArrangedSubview(symbolButton("doc.on.doc", title: L("Copy"), action: #selector(copyText)))
     }
+
 
     private func symbolButton(_ symbol: String, title: String, action: Selector) -> NSButton {
         let button = NSButton(image: NSImage(systemSymbolName: symbol, accessibilityDescription: title) ?? NSImage(), target: self, action: action)
