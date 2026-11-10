@@ -121,6 +121,7 @@ enum AnnotationTool: String, CaseIterable, Identifiable {
     case select
     case highlight
     case underline
+    case squiggly
     case strikeOut
     case textBox
     case note
@@ -132,12 +133,15 @@ enum AnnotationTool: String, CaseIterable, Identifiable {
     var id: String { rawValue }
 
     static let shapes: [AnnotationTool] = [.rectangle, .ellipse, .arrow]
+    /// Tools that mark selected text, in toolbar order.
+    static let markupTools: [AnnotationTool] = [.highlight, .underline, .squiggly, .strikeOut]
 
     var title: String {
         switch self {
         case .select: L("Select")
         case .highlight: L("Highlight")
         case .underline: L("Underline")
+        case .squiggly: L("Squiggly")
         case .strikeOut: L("Strikethrough")
         case .textBox: L("Text Box")
         case .note: L("Note")
@@ -153,6 +157,7 @@ enum AnnotationTool: String, CaseIterable, Identifiable {
         case .select: "cursorarrow"
         case .highlight: "highlighter"
         case .underline: "underline"
+        case .squiggly: "water.waves"
         case .strikeOut: "strikethrough"
         case .textBox: "character.textbox"
         case .note: "text.bubble"
@@ -164,7 +169,7 @@ enum AnnotationTool: String, CaseIterable, Identifiable {
     }
 
     /// Tools applied to text selected by dragging.
-    var marksText: Bool { self == .highlight || self == .underline || self == .strikeOut }
+    var marksText: Bool { Self.markupTools.contains(self) }
     var isShape: Bool { Self.shapes.contains(self) }
     var colorChoices: [MarkupColor] { marksText ? MarkupColor.allCases : MarkupColor.drawingCases }
 }
@@ -185,6 +190,7 @@ final class ReaderLibrary: ObservableObject {
     @Published var selectedHighlightColor: MarkupColor = .yellow
     @Published var selectedUnderlineColor: MarkupColor = .yellow
     @Published var selectedStrikeOutColor: MarkupColor = .yellow
+    @Published var selectedSquigglyColor: MarkupColor = .red
     /// Color for text boxes, drawings and shapes.
     @Published var drawingColor: MarkupColor = .red
     /// Opacity of new highlights, underlines and strikethroughs, per tool.
@@ -641,39 +647,25 @@ final class ReaderLibrary: ObservableObject {
         case apply
     }
 
-    func toggleHighlight(in selection: PDFSelection) {
-        editMarkup(.highlight, color: selectedHighlightColor, in: selection, intent: .toggle)
+    /// Marks the selection with a markup tool in its current color, or
+    /// removes that markup where the selection already has it.
+    func toggleMarkup(_ tool: AnnotationTool, in selection: PDFSelection) {
+        editMarkup(tool, color: color(for: tool), in: selection, intent: .toggle)
     }
 
-    func toggleUnderline(in selection: PDFSelection) {
-        editMarkup(.underline, color: selectedUnderlineColor, in: selection, intent: .toggle)
+    /// Marks the selection with a markup tool in a color, which becomes the
+    /// tool's color.
+    func applyMarkup(_ tool: AnnotationTool, color: MarkupColor, to selection: PDFSelection) {
+        setColor(color, for: tool)
+        editMarkup(tool, color: color, in: selection, intent: .apply)
     }
 
-    func toggleStrikeOut(in selection: PDFSelection) {
-        editMarkup(.strikeOut, color: selectedStrikeOutColor, in: selection, intent: .toggle)
-    }
-
-    func applyHighlight(color: MarkupColor, to selection: PDFSelection) {
-        selectedHighlightColor = color
-        editMarkup(.highlight, color: color, in: selection, intent: .apply)
-    }
-
-    func applyUnderline(color: MarkupColor, to selection: PDFSelection) {
-        selectedUnderlineColor = color
-        editMarkup(.underline, color: color, in: selection, intent: .apply)
-    }
-
-    func applyStrikeOut(color: MarkupColor, to selection: PDFSelection) {
-        selectedStrikeOutColor = color
-        editMarkup(.strikeOut, color: color, in: selection, intent: .apply)
-    }
-
-    private func editMarkup(_ type: PDFAnnotationSubtype, color: MarkupColor, in selection: PDFSelection, intent: MarkupIntent) {
-        lastMarkupTool = type == .underline ? .underline : (type == .strikeOut ? .strikeOut : .highlight)
-        let styled = color.nsColor.withAlphaComponent(opacity(for: lastMarkupTool))
-        recordAnnotationEdit(markupActionName(type), pages: selection.pages) {
+    private func editMarkup(_ tool: AnnotationTool, color: MarkupColor, in selection: PDFSelection, intent: MarkupIntent) {
+        lastMarkupTool = tool
+        let styled = color.nsColor.withAlphaComponent(opacity(for: tool))
+        recordAnnotationEdit(tool.title, pages: selection.pages) {
             for page in selection.pages {
-                applyMarkup(type, color: styled, characters: MarkupEngine.characters(of: selection, on: page), on: page, intent: intent)
+                markCharacters(tool, color: styled, characters: MarkupEngine.characters(of: selection, on: page), on: page, intent: intent)
             }
         }
         pdfView?.clearSelection()
@@ -682,8 +674,8 @@ final class ReaderLibrary: ObservableObject {
     /// Applies one markup edit on one page and returns the annotation that now
     /// covers the characters, or nil when the edit erased markup.
     @discardableResult
-    private func applyMarkup(
-        _ type: PDFAnnotationSubtype,
+    private func markCharacters(
+        _ tool: AnnotationTool,
         color: NSColor,
         characters: IndexSet,
         on page: PDFPage,
@@ -691,9 +683,8 @@ final class ReaderLibrary: ObservableObject {
     ) -> PDFAnnotation? {
         let wanted = MarkupEngine.visibleCharacters(characters, on: page)
         guard !wanted.isEmpty else { return nil }
-        let typeName = MarkupEngine.typeName(type)
         let overlapping = page.annotations
-            .filter { $0.type == typeName }
+            .filter { MarkupEngine.tool(of: $0) == tool }
             .map { ($0, MarkupEngine.characters(of: $0, on: page)) }
             .filter { !$0.1.intersection(wanted).isEmpty }
         let covered = overlapping.reduce(IndexSet()) { $0.union($1.1) }
@@ -707,9 +698,10 @@ final class ReaderLibrary: ObservableObject {
                 page.removeAnnotation(annotation)
                 let remaining = marked.subtracting(characters)
                 for (index, run) in MarkupEngine.runs(of: remaining, on: page).enumerated() {
-                    guard let piece = MarkupEngine.makeAnnotation(type: type, color: annotation.color, characters: run, on: page) else { continue }
+                    guard let piece = MarkupEngine.makeAnnotation(tool: tool, color: annotation.color, characters: run, on: page) else { continue }
                     Self.stampOpacity(of: piece)
                     page.addAnnotation(piece)
+                    if tool == .squiggly { handOverToOverlay(piece) }
                     if index == 0 { storeNote(note(of: annotation), for: piece) }
                 }
             }
@@ -722,21 +714,14 @@ final class ReaderLibrary: ObservableObject {
             .map { note(of: $0.0) }
             .filter { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
         for (annotation, _) in overlapping { page.removeAnnotation(annotation) }
-        guard let merged = MarkupEngine.makeAnnotation(type: type, color: color, characters: characters.union(covered), on: page) else {
+        guard let merged = MarkupEngine.makeAnnotation(tool: tool, color: color, characters: characters.union(covered), on: page) else {
             return nil
         }
         Self.stampOpacity(of: merged)
         page.addAnnotation(merged)
+        if tool == .squiggly { handOverToOverlay(merged) }
         storeNote(notes.joined(separator: "\n\n"), for: merged)
         return merged
-    }
-
-    private func markupActionName(_ type: PDFAnnotationSubtype) -> String {
-        switch type {
-        case .underline: L("Underline")
-        case .strikeOut: L("Strikethrough")
-        default: L("Highlight")
-        }
     }
 
     /// Markup of any type under the selection, highlights first, then those with a note.
@@ -793,7 +778,7 @@ final class ReaderLibrary: ObservableObject {
         let characters = MarkupEngine.characters(of: selection, on: page)
         var created: PDFAnnotation?
         let edit = captureAnnotationEdit(pages: [page]) {
-            created = applyMarkup(.highlight, color: styledColor(for: .highlight), characters: characters, on: page, intent: .apply)
+            created = markCharacters(.highlight, color: styledColor(for: .highlight), characters: characters, on: page, intent: .apply)
         }
         guard let created else {
             edit.revert()
@@ -846,12 +831,10 @@ final class ReaderLibrary: ObservableObject {
     }
 
     func setColor(_ annotation: PDFAnnotation, to color: MarkupColor) {
-        switch annotation.type {
-        case "Highlight": selectedHighlightColor = color
-        case "Underline": selectedUnderlineColor = color
-        case "StrikeOut": selectedStrikeOutColor = color
-        case "FreeText", "Ink", "Square", "Circle", "Line": drawingColor = color
-        default: break
+        if let tool = MarkupEngine.tool(of: annotation) {
+            setColor(color, for: tool)
+        } else if ["FreeText", "Ink", "Square", "Circle", "Line"].contains(annotation.type ?? "") {
+            drawingColor = color
         }
         // A new color keeps the annotation's opacity.
         let nsColor = color.nsColor.withAlphaComponent(displayColor(of: annotation).alphaComponent)
@@ -887,12 +870,7 @@ final class ReaderLibrary: ObservableObject {
 
     /// The tool whose color and opacity defaults an annotation's kind uses.
     static func defaultsTool(for annotation: PDFAnnotation) -> AnnotationTool {
-        switch annotation.type {
-        case "Highlight": .highlight
-        case "Underline": .underline
-        case "StrikeOut": .strikeOut
-        default: .ink
-        }
+        MarkupEngine.tool(of: annotation) ?? .ink
     }
 
     private func setColor(_ annotation: PDFAnnotation, to color: NSColor) {
@@ -926,6 +904,7 @@ final class ReaderLibrary: ObservableObject {
         switch tool {
         case .highlight: selectedHighlightColor
         case .underline: selectedUnderlineColor
+        case .squiggly: selectedSquigglyColor
         case .strikeOut: selectedStrikeOutColor
         default: drawingColor
         }
@@ -935,6 +914,7 @@ final class ReaderLibrary: ObservableObject {
         switch tool {
         case .highlight: selectedHighlightColor = color
         case .underline: selectedUnderlineColor = color
+        case .squiggly: selectedSquigglyColor = color
         case .strikeOut: selectedStrikeOutColor = color
         default: drawingColor = color
         }
@@ -986,11 +966,7 @@ final class ReaderLibrary: ObservableObject {
     /// drags. Otherwise the button turns the tool on, or off when it is active.
     func chooseTool(_ tool: AnnotationTool) {
         if tool.marksText, let selection = selectedText {
-            switch tool {
-            case .underline: toggleUnderline(in: selection)
-            case .strikeOut: toggleStrikeOut(in: selection)
-            default: toggleHighlight(in: selection)
-            }
+            toggleMarkup(tool, in: selection)
             activeTool = tool
             return
         }
@@ -1006,21 +982,13 @@ final class ReaderLibrary: ObservableObject {
             onTypingStyleChange?()
         }
         guard tool.marksText, let selection = selectedText else { return }
-        switch tool {
-        case .underline: applyUnderline(color: color, to: selection)
-        case .strikeOut: applyStrikeOut(color: color, to: selection)
-        default: applyHighlight(color: color, to: selection)
-        }
+        applyMarkup(tool, color: color, to: selection)
     }
 
     /// Marks text selected while a markup tool is active.
     func applyActiveTool(to selection: PDFSelection) {
-        switch activeTool {
-        case .highlight: applyHighlight(color: selectedHighlightColor, to: selection)
-        case .underline: applyUnderline(color: selectedUnderlineColor, to: selection)
-        case .strikeOut: applyStrikeOut(color: selectedStrikeOutColor, to: selection)
-        default: break
-        }
+        guard activeTool.marksText else { return }
+        applyMarkup(activeTool, color: color(for: activeTool), to: selection)
     }
 
     /// Places a standalone note centered on a page point and opens its editor.
@@ -1422,7 +1390,7 @@ final class ReaderLibrary: ObservableObject {
     func overlayDrawnAnnotations(on page: PDFPage) -> [PDFAnnotation] {
         prepareNotes(on: page)
         return page.annotations.filter {
-            Self.overlayDrawnTypes.contains($0.type ?? "")
+            (Self.overlayDrawnTypes.contains($0.type ?? "") || MarkupEngine.isSquiggly($0))
                 && hiddenNativeAnnotations[ObjectIdentifier($0)] != nil
                 && $0 !== annotationBeingTyped
         }
@@ -1438,9 +1406,11 @@ final class ReaderLibrary: ObservableObject {
             // Text boxes from other apps keep PDFKit's rendering, which follows
             // their own appearance stream more faithfully than a redraw would.
             let drawable = type == "FreeText" ? Self.restoreTextStyle(of: annotation) : Self.overlayDrawnTypes.contains(type)
-            if (type == "Text" || drawable), annotation.shouldDisplay {
+            // PDFKit draws squiggly markup as a straight line, or not at all.
+            if (type == "Text" || drawable || MarkupEngine.isSquiggly(annotation)), annotation.shouldDisplay {
                 handOverToOverlay(annotation)
-            } else if MarkupEngine.isMarkup(annotation), let text = annotation.contents, !text.isEmpty {
+            }
+            if MarkupEngine.isMarkup(annotation), let text = annotation.contents, !text.isEmpty {
                 storeNote(text, for: annotation)
             }
         }
@@ -1631,7 +1601,7 @@ final class ReaderLibrary: ObservableObject {
         for index in 0..<document.pageCount {
             guard let page = document.page(at: index) else { continue }
             for annotation in page.annotations {
-                guard let type = annotation.type, let kind = Self.listedAnnotationKinds[type],
+                guard let type = annotation.type, let kind = MarkupEngine.tool(of: annotation)?.title ?? Self.listedAnnotationKinds[type],
                       pendingCreation?.annotation !== annotation else { continue }
                 var text = ""
                 var noteText = note(of: annotation)

@@ -2,7 +2,7 @@ import AppKit
 import PDFKit
 
 /// A floating row of markup actions above text selected with the select tool:
-/// the three markup tools, colors, a note and Copy, as in the context menu but
+/// the markup tools, colors, a note and Copy, as in the context menu but
 /// one click away. It is a borderless child panel that never takes focus, so
 /// the PDF view keeps the selection and the keyboard.
 @MainActor
@@ -20,7 +20,7 @@ final class SelectionToolbar: NSObject {
     private var swatches: [MarkupColorSwatchButton] = []
     private var observers: [NSObjectProtocol] = []
 
-    private static let tools: [AnnotationTool] = [.highlight, .underline, .strikeOut]
+    private static let tools = AnnotationTool.markupTools
 
     init(view: PDFView, library: ReaderLibrary?) {
         self.view = view
@@ -192,11 +192,7 @@ final class SelectionToolbar: NSObject {
     @objc private func pickTool(_ sender: MarkupToolIconButton) {
         guard let selection, let library else { return }
         hide()
-        switch sender.tool {
-        case .underline: library.toggleUnderline(in: selection)
-        case .strikeOut: library.toggleStrikeOut(in: selection)
-        default: library.toggleHighlight(in: selection)
-        }
+        library.toggleMarkup(sender.tool, in: selection)
     }
 
     /// Marks the selection in the color with the tool used last.
@@ -204,11 +200,7 @@ final class SelectionToolbar: NSObject {
         guard MarkupColor.allCases.indices.contains(sender.tag), let selection, let library else { return }
         let color = MarkupColor.allCases[sender.tag]
         hide()
-        switch library.lastMarkupTool {
-        case .underline: library.applyUnderline(color: color, to: selection)
-        case .strikeOut: library.applyStrikeOut(color: color, to: selection)
-        default: library.applyHighlight(color: color, to: selection)
-        }
+        library.applyMarkup(library.lastMarkupTool, color: color, to: selection)
     }
 
     @objc private func addNote() {

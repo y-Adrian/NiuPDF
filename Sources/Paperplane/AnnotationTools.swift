@@ -63,7 +63,7 @@ final class AnnotationToolHandler {
             let group = library.selectedAnnotations.filter { ReaderLibrary.isMovable($0) && $0.page === page }
             drag = .move(page: page, clicked: movable, annotations: group, originals: group.map(AnnotationGeometry.init), start: point, moved: false, wasSelected: wasSelected)
             return true
-        case .highlight, .underline, .strikeOut:
+        case .highlight, .underline, .squiggly, .strikeOut:
             return false
         case .note:
             library.addStandaloneNote(at: point, on: page)
@@ -140,7 +140,7 @@ final class AnnotationToolHandler {
     var cursor: NSCursor? {
         switch library?.activeTool ?? .select {
         case .select: nil
-        case .highlight, .underline, .strikeOut, .textBox: .iBeam
+        case .highlight, .underline, .squiggly, .strikeOut, .textBox: .iBeam
         case .note, .ink, .rectangle, .ellipse, .arrow: .crosshair
         }
     }
@@ -341,9 +341,56 @@ enum VectorAnnotationRenderer {
             path.stroke()
         case "FreeText":
             drawText(of: annotation)
+        case "Underline", "Squiggly":
+            if MarkupEngine.isSquiggly(annotation) { drawSquiggle(annotation) }
         default:
             break
         }
+    }
+
+    /// A wave under each line of squiggly markup, at the height where it
+    /// meets the least text: below the glyphs when the space between lines is
+    /// free, otherwise along the bottom of its own line, cut where glyphs
+    /// reach down through it (y, g, p…), as browsers cut underlines.
+    private static func drawSquiggle(_ annotation: PDFAnnotation) {
+        guard let page = annotation.page else { return }
+        annotation.color.setStroke()
+        for placement in SquiggleInk.placements(for: annotation, on: page) {
+            let line = placement.line, wave = placement.wave
+            NSGraphicsContext.saveGraphicsState()
+            if !placement.gaps.isEmpty {
+                // Even-odd clip: everything except the gaps.
+                let clip = NSBezierPath(rect: line.insetBy(dx: -4, dy: -line.height))
+                for gap in placement.gaps {
+                    clip.appendRect(CGRect(x: gap.lowerBound, y: line.minY - line.height, width: gap.upperBound - gap.lowerBound, height: line.height * 3))
+                }
+                clip.windingRule = .evenOdd
+                clip.addClip()
+            }
+            let path = squiggle(from: line.minX, to: line.maxX, at: wave.center, amplitude: wave.amplitude, wavelength: wave.wavelength)
+            path.lineWidth = wave.lineWidth
+            path.lineCapStyle = .round
+            path.lineJoinStyle = .round
+            path.stroke()
+            NSGraphicsContext.restoreGraphicsState()
+        }
+    }
+
+    /// A smooth wave along y from `left` to `right`.
+    nonisolated static func squiggle(from left: CGFloat, to right: CGFloat, at y: CGFloat, amplitude: CGFloat, wavelength: CGFloat) -> NSBezierPath {
+        let path = NSBezierPath()
+        path.move(to: CGPoint(x: left, y: y))
+        var x = left
+        var up = true
+        let half = wavelength / 2
+        while x < right {
+            let next = min(x + half, right)
+            let peak = CGPoint(x: (x + next) / 2, y: y + (up ? amplitude : -amplitude) * 2 * (next - x) / half)
+            path.curve(to: CGPoint(x: next, y: y), controlPoint1: peak, controlPoint2: peak)
+            x = next
+            up.toggle()
+        }
+        return path
     }
 
     private static func appendArrowHead(_ style: PDFLineStyle, at tip: CGPoint, from tail: CGPoint, width: CGFloat, to path: NSBezierPath) {
@@ -418,14 +465,184 @@ enum MarkupGlyph {
         let baseline = rect.midY - font.capHeight / 2
         letter.draw(at: CGPoint(x: rect.midX - size.width / 2, y: baseline + font.descender), withAttributes: attributes)
 
-        guard tool == .underline || tool == .strikeOut else { return }
-        let lineY = tool == .underline ? baseline - side * 0.1 : baseline + font.capHeight * 0.45
-        let line = NSBezierPath()
+        guard tool == .underline || tool == .squiggly || tool == .strikeOut else { return }
+        let lineY = tool == .strikeOut ? baseline + font.capHeight * 0.45 : baseline - side * 0.1
+        let left = rect.midX - size.width / 2 - side * 0.06
+        let right = rect.midX + size.width / 2 + side * 0.06
+        let line = tool == .squiggly
+            ? VectorAnnotationRenderer.squiggle(from: left, to: right, at: lineY, amplitude: side * 0.05, wavelength: side * 0.22)
+            : NSBezierPath()
+        if tool != .squiggly {
+            line.move(to: CGPoint(x: left, y: lineY))
+            line.line(to: CGPoint(x: right, y: lineY))
+        }
         line.lineWidth = max(1.4, side * 0.07)
         line.lineCapStyle = .round
-        line.move(to: CGPoint(x: rect.midX - size.width / 2 - side * 0.06, y: lineY))
-        line.line(to: CGPoint(x: rect.midX + size.width / 2 + side * 0.06, y: lineY))
+        line.lineJoinStyle = .round
         NSColor.systemRed.setStroke()
         line.stroke()
+    }
+}
+
+/// Where a squiggle goes on each line, found from the page's text (rendered
+/// with annotations off) around the bottom of the line. Cached per
+/// annotation: the text under markup does not change.
+@MainActor
+enum SquiggleInk {
+    struct Wave {
+        var center: CGFloat
+        var amplitude: CGFloat
+        var lineWidth: CGFloat
+        var wavelength: CGFloat
+        /// Half the wave's height, stroke included, with some air.
+        var reach: CGFloat { amplitude + lineWidth / 2 + 0.6 }
+    }
+
+    struct Placement {
+        var line: CGRect
+        var wave: Wave
+        /// Horizontal page ranges to leave out where glyphs cross the wave.
+        var gaps: [ClosedRange<CGFloat>]
+    }
+
+    /// The wave's shape for a line, centered just above the bottom of the
+    /// line box, which reaches down to the descenders.
+    static func wave(for line: CGRect) -> Wave {
+        let amplitude = max(0.5, line.height * 0.05)
+        let lineWidth = max(0.5, line.height * 0.045)
+        let gap = max(0.2, line.height * 0.02)
+        return Wave(
+            center: line.minY + gap + amplitude + lineWidth / 2,
+            amplitude: amplitude,
+            lineWidth: lineWidth,
+            wavelength: max(2.5, line.height * 0.3)
+        )
+    }
+
+    private final class Entry {
+        let key: String
+        let placements: [Placement]
+        init(key: String, placements: [Placement]) {
+            self.key = key
+            self.placements = placements
+        }
+    }
+
+    private static let cache = NSMapTable<PDFAnnotation, Entry>.weakToStrongObjects()
+
+    static func placements(for annotation: PDFAnnotation, on page: PDFPage) -> [Placement] {
+        let lines = MarkupEngine.lineRects(of: annotation)
+        let key = "\(lines)\(page.rotation)"
+        if let entry = cache.object(forKey: annotation), entry.key == key { return entry.placements }
+        let placements = lines.map { place(under: $0, on: page) }
+        cache.setObject(Entry(key: key, placements: placements), forKey: annotation)
+        return placements
+    }
+
+    /// Picks the wave's height. It stays inside its own line box, at the
+    /// height crossing the fewest glyphs, so it reads as part of that line and
+    /// keeps clear of the next. Only when glyphs fill the bottom of the line
+    /// (Chinese text sits on it) does it move below the box, and only if the
+    /// space there is clearly emptier.
+    private static func place(under line: CGRect, on page: PDFPage) -> Placement {
+        var wave = wave(for: line)
+        let highest = line.minY + line.height * 0.22, lowest = line.minY - line.height * 0.3
+        // The band covers every candidate wave, stroke included.
+        let band = CGRect(x: line.minX, y: lowest - wave.reach - 0.5, width: line.width, height: highest - lowest + wave.reach * 2 + 1)
+        // `draw(with:to:)` applies page rotation, which would move the band;
+        // rotated pages keep the default, uncut wave.
+        guard page.rotation == 0, let ink = InkMap(page: page, band: band) else {
+            return Placement(line: line, wave: wave, gaps: [])
+        }
+        let preferred = wave.center
+        func best(from top: CGFloat, to bottom: CGFloat) -> (center: CGFloat, columns: Int)? {
+            var result: (center: CGFloat, columns: Int, distance: CGFloat)?
+            var center = top
+            while center >= bottom {
+                let columns = ink.inkColumns(from: center - wave.reach, to: center + wave.reach).count { $0 }
+                let distance = abs(center - preferred)
+                if result == nil || columns < result!.columns || (columns == result!.columns && distance < result!.distance) {
+                    result = (center, columns, distance)
+                }
+                center -= 0.25
+            }
+            return result.map { ($0.center, $0.columns) }
+        }
+        let insideLowest = line.minY + wave.amplitude + wave.lineWidth / 2
+        var chosen = best(from: highest, to: insideLowest) ?? (preferred, 0)
+        if CGFloat(chosen.columns) > CGFloat(ink.width) * 0.2,
+           let below = best(from: insideLowest - 0.25, to: lowest),
+           below.columns * 2 < chosen.columns {
+            chosen = below
+        }
+        wave.center = chosen.center
+        let gaps = ink.gaps(from: wave.center - wave.reach, to: wave.center + wave.reach, pad: wave.lineWidth * 1.5 + 0.4, minimumPiece: wave.wavelength * 0.75)
+        return Placement(line: line, wave: wave, gaps: gaps)
+    }
+
+    /// Dark pixels of the page's text in a band, at 4 pixels per point.
+    private struct InkMap {
+        let band: CGRect
+        let scale: CGFloat = 4
+        let width: Int
+        let height: Int
+        let ink: [Bool]
+
+        init?(page: PDFPage, band: CGRect) {
+            self.band = band
+            width = Int((band.width * scale).rounded(.up))
+            height = Int((band.height * scale).rounded(.up))
+            guard width > 0, height > 0,
+                  let context = CGContext(data: nil, width: width, height: height, bitsPerComponent: 8, bytesPerRow: width * 4,
+                                          space: CGColorSpace(name: CGColorSpace.sRGB)!, bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue),
+                  let data = context.data else { return nil }
+            context.setFillColor(.white)
+            context.fill(CGRect(x: 0, y: 0, width: width, height: height))
+            context.scaleBy(x: scale, y: scale)
+            context.translateBy(x: -band.minX, y: -band.minY)
+            let showed = page.displaysAnnotations
+            page.displaysAnnotations = false
+            page.draw(with: .mediaBox, to: context)
+            page.displaysAnnotations = showed
+            let pixels = data.bindMemory(to: UInt8.self, capacity: width * height * 4)
+            var ink = [Bool](repeating: false, count: width * height)
+            for index in 0..<(width * height) {
+                let offset = index * 4
+                ink[index] = 0.299 * Double(pixels[offset]) + 0.587 * Double(pixels[offset + 1]) + 0.114 * Double(pixels[offset + 2]) < 140
+            }
+            self.ink = ink
+        }
+
+        /// For each pixel column, whether text ink lies between two page heights.
+        func inkColumns(from low: CGFloat, to high: CGFloat) -> [Bool] {
+            // Row 0 is the top of the band.
+            let top = max(0, Int(((band.maxY - high) * scale).rounded(.down)))
+            let bottom = min(height, Int(((band.maxY - low) * scale).rounded(.up)))
+            guard top < bottom else { return [Bool](repeating: false, count: width) }
+            return (0..<width).map { x in (top..<bottom).contains { ink[$0 * width + x] } }
+        }
+
+        /// Page ranges to leave out: runs of inked columns widened by `pad`,
+        /// merged when the wave left between them would be shorter than
+        /// `minimumPiece`.
+        func gaps(from low: CGFloat, to high: CGFloat, pad: CGFloat, minimumPiece: CGFloat) -> [ClosedRange<CGFloat>] {
+            let columns = inkColumns(from: low, to: high)
+            var gaps: [ClosedRange<CGFloat>] = []
+            var start: Int?
+            for x in 0...width {
+                let inked = x < width && columns[x]
+                if inked, start == nil { start = x }
+                if !inked, let begin = start {
+                    let gap = (band.minX + CGFloat(begin) / scale - pad)...(band.minX + CGFloat(x) / scale + pad)
+                    if let last = gaps.last, gap.lowerBound - last.upperBound < minimumPiece {
+                        gaps[gaps.count - 1] = last.lowerBound...gap.upperBound
+                    } else {
+                        gaps.append(gap)
+                    }
+                    start = nil
+                }
+            }
+            return gaps
+        }
     }
 }

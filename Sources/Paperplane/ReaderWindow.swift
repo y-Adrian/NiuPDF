@@ -425,7 +425,7 @@ private struct AnnotationToolBar: View {
     var body: some View {
         HStack(spacing: 18) {
             Spacer(minLength: 0)
-            group([.highlight, .underline, .strikeOut])
+            group(AnnotationTool.markupTools)
             group([.ink, .textBox])
             HStack(spacing: 2) {
                 shapeMenu

@@ -223,6 +223,7 @@ struct ReaderCommands: Commands {
             Divider()
             toolItem(.highlight, key: "h")
             toolItem(.underline, key: "u")
+            toolItem(.squiggly, key: "w")
             toolItem(.strikeOut, key: "s")
             Divider()
             toolItem(.note, key: "n")

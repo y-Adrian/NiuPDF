@@ -475,7 +475,7 @@ private final class MarkupPDFView: PDFView, AnnotationOverlayHost {
         return item
     }
 
-    private static let menuMarkupTools: [AnnotationTool] = [.highlight, .underline, .strikeOut]
+    private static let menuMarkupTools = AnnotationTool.markupTools
     /// The markup tool the context menu's colors apply to.
     private var menuMarkupTool: AnnotationTool = .highlight
     private var menuToolButtons: [MarkupToolIconButton] = []
@@ -535,11 +535,7 @@ private final class MarkupPDFView: PDFView, AnnotationOverlayHost {
         guard let contextMenuSelection, let readerLibrary else { return }
         menuMarkupTool = sender.tool
         for button in menuToolButtons { button.setSelectedTool(button === sender) }
-        switch sender.tool {
-        case .underline: readerLibrary.toggleUnderline(in: contextMenuSelection)
-        case .strikeOut: readerLibrary.toggleStrikeOut(in: contextMenuSelection)
-        default: readerLibrary.toggleHighlight(in: contextMenuSelection)
-        }
+        readerLibrary.toggleMarkup(sender.tool, in: contextMenuSelection)
         let current = readerLibrary.color(for: sender.tool)
         for (index, swatch) in menuSwatches.enumerated() { swatch.setSelectedColor(MarkupColor.allCases[index] == current) }
     }
@@ -547,11 +543,7 @@ private final class MarkupPDFView: PDFView, AnnotationOverlayHost {
     @objc private func applyColorFromRow(_ sender: NSButton) {
         guard MarkupColor.allCases.indices.contains(sender.tag), let contextMenuSelection, let readerLibrary else { return }
         let color = MarkupColor.allCases[sender.tag]
-        switch menuMarkupTool {
-        case .underline: readerLibrary.applyUnderline(color: color, to: contextMenuSelection)
-        case .strikeOut: readerLibrary.applyStrikeOut(color: color, to: contextMenuSelection)
-        default: readerLibrary.applyHighlight(color: color, to: contextMenuSelection)
-        }
+        readerLibrary.applyMarkup(menuMarkupTool, color: color, to: contextMenuSelection)
         for swatch in menuSwatches { swatch.setSelectedColor(swatch === sender) }
     }
 

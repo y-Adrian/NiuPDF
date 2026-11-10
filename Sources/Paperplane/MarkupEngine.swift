@@ -1,7 +1,7 @@
 import AppKit
 import PDFKit
 
-/// Text markup (highlight, underline, strike-out) modeled as the set of page
+/// Text markup (highlight, underline, squiggly, strike-out) modeled as the set of page
 /// characters it covers. Working on characters instead of rectangles lets one
 /// selection become one annotation, and lets overlapping markup be merged or
 /// partly erased the way mainstream PDF editors do.
@@ -12,8 +12,34 @@ enum MarkupEngine {
 
     static let markupTypeNames: Set<String> = ["Highlight", "Underline", "StrikeOut", "Squiggly"]
 
-    static func typeName(_ type: PDFAnnotationSubtype) -> String {
-        type.rawValue.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
+    /// Squiggly underlines are written as underlines carrying this key. PDFKit
+    /// writes `/Squiggly` with an empty appearance and no quads, so other
+    /// readers would show nothing; they show these as plain underlines, and
+    /// the page overlay here draws the wave.
+    private static let squigglyKey = PDFAnnotationKey(rawValue: "/PaperplaneSquiggly")
+
+    /// Squiggly markup: ours, or a native `/Squiggly` from another app, which
+    /// PDFKit does not draw either.
+    static func isSquiggly(_ annotation: PDFAnnotation) -> Bool {
+        annotation.type == "Squiggly" || (annotation.type == "Underline" && annotation.value(forAnnotationKey: squigglyKey) != nil)
+    }
+
+    /// The markup tool an annotation was made with, or nil for other kinds.
+    static func tool(of annotation: PDFAnnotation) -> AnnotationTool? {
+        switch annotation.type {
+        case "Highlight": .highlight
+        case "Underline", "Squiggly": isSquiggly(annotation) ? .squiggly : .underline
+        case "StrikeOut": .strikeOut
+        default: nil
+        }
+    }
+
+    static func subtype(for tool: AnnotationTool) -> PDFAnnotationSubtype {
+        switch tool {
+        case .underline, .squiggly: .underline
+        case .strikeOut: .strikeOut
+        default: .highlight
+        }
     }
 
     static func isMarkup(_ annotation: PDFAnnotation) -> Bool {
@@ -79,7 +105,7 @@ enum MarkupEngine {
 
     /// Builds one markup annotation covering `characters`, with one quad per text line.
     static func makeAnnotation(
-        type: PDFAnnotationSubtype,
+        tool: AnnotationTool,
         color: NSColor,
         characters: IndexSet,
         on page: PDFPage
@@ -96,7 +122,9 @@ enum MarkupEngine {
         guard let first = lines.first else { return nil }
         let bounds = lines.dropFirst().reduce(first) { $0.union($1) }
 
+        let type = subtype(for: tool)
         let annotation = PDFAnnotation(bounds: bounds, forType: type, withProperties: nil)
+        if tool == .squiggly { annotation.setValue("1", forAnnotationKey: squigglyKey) }
         if type == .underline {
             let border = PDFBorder()
             border.lineWidth = 2
