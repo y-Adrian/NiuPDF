@@ -203,3 +203,10 @@
 "Copy" = "拷贝";
 "Show markup tools for selected text" = "选中文字时显示标注工具";
 "Highlight, underline, strikethrough, note and copy appear above text you select." = "在选中的文字上方显示高亮、下划线、删除线、笔记和拷贝。";
+"%ld%%" = "%ld%%";
+"Opacity" = "不透明度";
+"Change Opacity" = "更改不透明度";
+"Saved Styles" = "常用样式";
+"Save Current Style" = "存储当前样式";
+"Delete Style" = "删除样式";
+"No saved styles" = "尚无常用样式";

@@ -178,6 +178,10 @@ final class ReaderLibrary: ObservableObject {
     @Published var selectedStrikeOutColor: MarkupColor = .yellow
     /// Color for text boxes, drawings and shapes.
     @Published var drawingColor: MarkupColor = .red
+    /// Opacity of new highlights, underlines and strikethroughs, per tool.
+    @Published var markupOpacities: [AnnotationTool: CGFloat] = [:]
+    /// Opacity of new text boxes, drawings and shapes.
+    @Published var drawingOpacity: CGFloat = 1
     /// Line width for new drawings and shapes, in page points.
     @Published var strokeWidth: CGFloat = 2
     /// Font family for new text boxes; nil is the system font.
@@ -652,9 +656,10 @@ final class ReaderLibrary: ObservableObject {
 
     private func editMarkup(_ type: PDFAnnotationSubtype, color: MarkupColor, in selection: PDFSelection, intent: MarkupIntent) {
         lastMarkupTool = type == .underline ? .underline : (type == .strikeOut ? .strikeOut : .highlight)
+        let styled = color.nsColor.withAlphaComponent(opacity(for: lastMarkupTool))
         recordAnnotationEdit(markupActionName(type), pages: selection.pages) {
             for page in selection.pages {
-                applyMarkup(type, color: color.nsColor, characters: MarkupEngine.characters(of: selection, on: page), on: page, intent: intent)
+                applyMarkup(type, color: styled, characters: MarkupEngine.characters(of: selection, on: page), on: page, intent: intent)
             }
         }
         pdfView?.clearSelection()
@@ -680,7 +685,8 @@ final class ReaderLibrary: ObservableObject {
         let covered = overlapping.reduce(IndexSet()) { $0.union($1.1) }
 
         if intent == .toggle, !overlapping.isEmpty,
-           overlapping.allSatisfy({ colorsMatch($0.0.color, color) }),
+           // Opacity does not matter: the same color toggles markup off.
+           overlapping.allSatisfy({ colorsMatch($0.0.color, color, ignoringOpacity: true) }),
            wanted.isSubset(of: covered) {
             // Erase only the selected part; what is left keeps its color and note.
             for (annotation, marked) in overlapping {
@@ -688,6 +694,7 @@ final class ReaderLibrary: ObservableObject {
                 let remaining = marked.subtracting(characters)
                 for (index, run) in MarkupEngine.runs(of: remaining, on: page).enumerated() {
                     guard let piece = MarkupEngine.makeAnnotation(type: type, color: annotation.color, characters: run, on: page) else { continue }
+                    Self.stampOpacity(of: piece)
                     page.addAnnotation(piece)
                     if index == 0 { storeNote(note(of: annotation), for: piece) }
                 }
@@ -704,6 +711,7 @@ final class ReaderLibrary: ObservableObject {
         guard let merged = MarkupEngine.makeAnnotation(type: type, color: color, characters: characters.union(covered), on: page) else {
             return nil
         }
+        Self.stampOpacity(of: merged)
         page.addAnnotation(merged)
         storeNote(notes.joined(separator: "\n\n"), for: merged)
         return merged
@@ -732,7 +740,7 @@ final class ReaderLibrary: ObservableObject {
             }
     }
 
-    private func colorsMatch(_ first: NSColor, _ second: NSColor) -> Bool {
+    private func colorsMatch(_ first: NSColor, _ second: NSColor, ignoringOpacity: Bool = false) -> Bool {
         guard let first = first.usingColorSpace(.deviceRGB),
               let second = second.usingColorSpace(.deviceRGB) else {
             return first.isEqual(second)
@@ -741,7 +749,7 @@ final class ReaderLibrary: ObservableObject {
         return abs(first.redComponent - second.redComponent) < tolerance
             && abs(first.greenComponent - second.greenComponent) < tolerance
             && abs(first.blueComponent - second.blueComponent) < tolerance
-            && abs(first.alphaComponent - second.alphaComponent) < tolerance
+            && (ignoringOpacity || abs(first.alphaComponent - second.alphaComponent) < tolerance)
     }
 
     // MARK: - Notes
@@ -771,7 +779,7 @@ final class ReaderLibrary: ObservableObject {
         let characters = MarkupEngine.characters(of: selection, on: page)
         var created: PDFAnnotation?
         let edit = captureAnnotationEdit(pages: [page]) {
-            created = applyMarkup(.highlight, color: selectedHighlightColor.nsColor, characters: characters, on: page, intent: .apply)
+            created = applyMarkup(.highlight, color: styledColor(for: .highlight), characters: characters, on: page, intent: .apply)
         }
         guard let created else {
             edit.revert()
@@ -831,14 +839,46 @@ final class ReaderLibrary: ObservableObject {
         case "FreeText", "Ink", "Square", "Circle", "Line": drawingColor = color
         default: break
         }
+        // A new color keeps the annotation's opacity.
+        let nsColor = color.nsColor.withAlphaComponent(displayColor(of: annotation).alphaComponent)
         if pendingCreation?.annotation === annotation {
             // Part of a creation step that is not committed yet.
-            applyDisplayColor(color.nsColor, to: annotation)
+            applyDisplayColor(nsColor, to: annotation)
             annotationRevision += 1
             refreshPDFView()
             return
         }
-        setColor(annotation, to: color.nsColor)
+        setColor(annotation, to: nsColor)
+    }
+
+    /// Changes one annotation's opacity, which also becomes the default for
+    /// new annotations of its kind.
+    func setOpacity(_ annotation: PDFAnnotation, to opacity: CGFloat) {
+        let current = displayColor(of: annotation)
+        let previous = current.alphaComponent
+        guard abs(previous - opacity) > 0.005 else { return }
+        setOpacity(opacity, for: Self.defaultsTool(for: annotation))
+        applyDisplayColor(current.withAlphaComponent(opacity), to: annotation)
+        if pendingCreation?.annotation === annotation {
+            annotationRevision += 1
+            refreshPDFView()
+            return
+        }
+        pdfView?.undoManager?.registerUndo(withTarget: self) { target in
+            target.setOpacity(annotation, to: previous)
+        }
+        pdfView?.undoManager?.setActionName(L("Change Opacity"))
+        annotationsDidChange()
+    }
+
+    /// The tool whose color and opacity defaults an annotation's kind uses.
+    static func defaultsTool(for annotation: PDFAnnotation) -> AnnotationTool {
+        switch annotation.type {
+        case "Highlight": .highlight
+        case "Underline": .underline
+        case "StrikeOut": .strikeOut
+        default: .ink
+        }
     }
 
     private func setColor(_ annotation: PDFAnnotation, to color: NSColor) {
@@ -884,6 +924,40 @@ final class ReaderLibrary: ObservableObject {
         case .strikeOut: selectedStrikeOutColor = color
         default: drawingColor = color
         }
+    }
+
+    static let opacities: [CGFloat] = [1, 0.75, 0.5, 0.25]
+
+    /// Whether a tool's annotations can be see-through. Text boxes cannot:
+    /// PDFKit drops the alpha of a text color as soon as it is set.
+    static func hasOpacity(_ tool: AnnotationTool) -> Bool {
+        tool != .select && tool != .note && tool != .textBox
+    }
+
+    /// Opacity for new annotations of a tool: each markup tool has its own;
+    /// drawings and shapes share one.
+    func opacity(for tool: AnnotationTool) -> CGFloat {
+        guard Self.hasOpacity(tool) else { return 1 }
+        return tool.marksText ? markupOpacities[tool] ?? 1 : drawingOpacity
+    }
+
+    func setOpacity(_ opacity: CGFloat, for tool: AnnotationTool) {
+        guard Self.hasOpacity(tool) else { return }
+        if tool.marksText {
+            markupOpacities[tool] = opacity
+        } else {
+            drawingOpacity = opacity
+        }
+    }
+
+    /// Toolbar opacity: the default for new annotations made with the tool.
+    func chooseOpacity(_ opacity: CGFloat, for tool: AnnotationTool) {
+        setOpacity(opacity, for: tool)
+    }
+
+    /// The color, with its opacity, of new annotations made with a tool.
+    func styledColor(for tool: AnnotationTool) -> NSColor {
+        color(for: tool).nsColor.withAlphaComponent(opacity(for: tool))
     }
 
     /// Text selected in the PDF view, if any.
@@ -987,7 +1061,7 @@ final class ReaderLibrary: ObservableObject {
             withProperties: nil
         )
         box.font = font
-        box.fontColor = drawingColor.nsColor
+        box.fontColor = styledColor(for: .textBox)
         box.color = .clear
         box.alignment = .left
         let border = PDFBorder()
@@ -1055,7 +1129,8 @@ final class ReaderLibrary: ObservableObject {
         let ink = PDFAnnotation(bounds: bounds, forType: .ink, withProperties: nil)
         ink.add(local)
         ink.border = strokeBorder()
-        ink.color = drawingColor.nsColor
+        ink.color = styledColor(for: .ink)
+        Self.stampOpacity(of: ink)
         handOverToOverlay(ink)
         recordAnnotationEdit(L("Draw"), pages: [page]) { page.addAnnotation(ink) }
     }
@@ -1079,7 +1154,8 @@ final class ReaderLibrary: ObservableObject {
             shape = PDFAnnotation(bounds: rect.insetBy(dx: -1, dy: -1), forType: .square, withProperties: nil)
         }
         shape.border = strokeBorder()
-        shape.color = drawingColor.nsColor
+        shape.color = styledColor(for: tool)
+        Self.stampOpacity(of: shape)
         handOverToOverlay(shape)
         recordAnnotationEdit(L("Add Shape"), pages: [page]) { page.addAnnotation(shape) }
     }
@@ -1159,7 +1235,30 @@ final class ReaderLibrary: ObservableObject {
             Self.stampTextStyle(of: annotation)
         } else {
             annotation.color = color
+            Self.stampOpacity(of: annotation)
         }
+    }
+
+    /// PDFKit writes an annotation's opacity only into its appearance stream,
+    /// which other readers show correctly, but reads the color back opaque.
+    /// Annotations made here also keep the opacity under this key, restored
+    /// when their page is prepared. Text boxes keep it in their text style.
+    private static let opacityKey = PDFAnnotationKey(rawValue: "/PaperplaneOpacity")
+
+    static func stampOpacity(of annotation: PDFAnnotation) {
+        let alpha = annotation.color.alphaComponent
+        if alpha < 0.995 {
+            annotation.setValue(String(format: "%.3f", alpha), forAnnotationKey: opacityKey)
+        } else {
+            annotation.removeValue(forAnnotationKey: opacityKey)
+        }
+    }
+
+    private static func restoreOpacity(of annotation: PDFAnnotation) {
+        guard let raw = annotation.value(forAnnotationKey: opacityKey),
+              let alpha = Double("\(raw)"), alpha > 0, alpha < 1,
+              abs(annotation.color.alphaComponent - alpha) > 0.005 else { return }
+        annotation.color = annotation.color.withAlphaComponent(alpha)
     }
 
     // MARK: - Note icons
@@ -1251,6 +1350,7 @@ final class ReaderLibrary: ObservableObject {
         guard preparedNotePages.insert(ObjectIdentifier(page)).inserted else { return }
         for annotation in page.annotations {
             let type = annotation.type ?? ""
+            if type != "FreeText" { Self.restoreOpacity(of: annotation) }
             // Text boxes from other apps keep PDFKit's rendering, which follows
             // their own appearance stream more faithfully than a redraw would.
             let drawable = type == "FreeText" ? Self.restoreTextStyle(of: annotation) : Self.overlayDrawnTypes.contains(type)

@@ -433,7 +433,10 @@ private struct AnnotationToolBar: View {
             }
             Divider().frame(height: 20)
             colorRow
+            opacityMenu
             styleControls
+            Divider().frame(height: 20)
+            StylePresetMenu()
             Spacer(minLength: 0)
         }
         .padding(.horizontal, 14)
@@ -498,6 +501,33 @@ private struct AnnotationToolBar: View {
                 .accessibilityValue(hasColor && color == current ? L("Selected") : "")
             }
         }
+        .disabled(!hasColor)
+        .opacity(hasColor ? 1 : 0.35)
+    }
+
+    /// Opacity of new annotations made with the active tool.
+    private var opacityMenu: some View {
+        let tool = library.activeTool
+        let hasColor = ReaderLibrary.hasOpacity(tool)
+        let current = library.opacity(for: hasColor ? tool : .highlight)
+        return Menu {
+            ForEach(ReaderLibrary.opacities, id: \.self) { value in
+                Button { library.chooseOpacity(value, for: tool) } label: {
+                    if abs(value - current) < 0.005 {
+                        Label(L("%ld%%", Int((value * 100).rounded())), systemImage: "checkmark")
+                    } else {
+                        Text(L("%ld%%", Int((value * 100).rounded())))
+                    }
+                }
+            }
+        } label: {
+            Text(L("%ld%%", Int((current * 100).rounded())))
+                .monospacedDigit()
+        }
+        .menuStyle(.borderlessButton)
+        .fixedSize()
+        .help(L("Opacity"))
+        .accessibilityLabel(L("Opacity"))
         .disabled(!hasColor)
         .opacity(hasColor ? 1 : 0.35)
     }

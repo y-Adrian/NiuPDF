@@ -178,6 +178,9 @@ extension ReaderLibrary {
         if type == "FreeText" {
             copy.font = annotation.font
             copy.fontColor = annotation.fontColor
+        } else {
+            // The dictionary's color is opaque; keep the opacity.
+            copy.color = annotation.color
         }
         copy.shouldDisplay = true
         return copy

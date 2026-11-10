@@ -496,6 +496,10 @@ final class AnnotationEditorController: NSViewController, NSPopoverDelegate {
             rows.append(row)
             rows.append(Self.hairline())
         }
+        if let opacityRow = opacityRow() {
+            rows.append(opacityRow)
+            rows.append(Self.hairline())
+        }
         if let styleRow = styleRow() {
             rows.append(styleRow)
             rows.append(Self.hairline())
@@ -521,6 +525,35 @@ final class AnnotationEditorController: NSViewController, NSPopoverDelegate {
         stack.spacing = 0
         for row in rows { row.widthAnchor.constraint(equalToConstant: width).isActive = true }
         view = stack
+    }
+
+    /// Opacity for markup, drawings and shapes. Standalone notes have no
+    /// color choice, and text boxes cannot keep a see-through text color.
+    private func opacityRow() -> NSView? {
+        guard !palette.isEmpty, annotation.type != "FreeText" else { return nil }
+        let values = ReaderLibrary.opacities
+        let labels = values.map { L("%ld%%", Int(($0 * 100).rounded())) }
+        let control = NSSegmentedControl(labels: labels, trackingMode: .selectOne, target: self, action: #selector(pickOpacity(_:)))
+        let current = (library?.displayColor(of: annotation) ?? annotation.color).alphaComponent
+        control.selectedSegment = values.firstIndex { abs($0 - current) < 0.01 } ?? -1
+        control.controlSize = .small
+        control.setAccessibilityLabel(L("Opacity"))
+        let title = NSTextField(labelWithString: L("Opacity"))
+        title.font = .systemFont(ofSize: 12)
+        title.textColor = .secondaryLabelColor
+        // The label keeps its width; the segments give way if space is short.
+        title.setContentCompressionResistancePriority(.required, for: .horizontal)
+        control.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+        let row = NSStackView(views: [title, control])
+        row.orientation = .horizontal
+        row.spacing = 8
+        row.edgeInsets = NSEdgeInsets(top: 8, left: 12, bottom: 8, right: 12)
+        return row
+    }
+
+    @objc private func pickOpacity(_ sender: NSSegmentedControl) {
+        guard ReaderLibrary.opacities.indices.contains(sender.selectedSegment) else { return }
+        library?.setOpacity(annotation, to: ReaderLibrary.opacities[sender.selectedSegment])
     }
 
     /// Line width for drawings and shapes; font family and size for text boxes.

@@ -203,3 +203,10 @@
 "Copy" = "Copy";
 "Show markup tools for selected text" = "Show markup tools for selected text";
 "Highlight, underline, strikethrough, note and copy appear above text you select." = "Highlight, underline, strikethrough, note and copy appear above text you select.";
+"%ld%%" = "%ld%%";
+"Opacity" = "Opacity";
+"Change Opacity" = "Change Opacity";
+"Saved Styles" = "Saved Styles";
+"Save Current Style" = "Save Current Style";
+"Delete Style" = "Delete Style";
+"No saved styles" = "No saved styles";
