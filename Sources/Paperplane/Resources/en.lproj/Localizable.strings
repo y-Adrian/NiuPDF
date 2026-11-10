@@ -200,3 +200,6 @@
 "Merged" = "Merged";
 "“%@” couldn’t be read as a PDF." = "“%@” couldn’t be read as a PDF.";
 "“%@” is open. Close it or choose another name." = "“%@” is open. Close it or choose another name.";
+"Copy" = "Copy";
+"Show markup tools for selected text" = "Show markup tools for selected text";
+"Highlight, underline, strikethrough, note and copy appear above text you select." = "Highlight, underline, strikethrough, note and copy appear above text you select.";

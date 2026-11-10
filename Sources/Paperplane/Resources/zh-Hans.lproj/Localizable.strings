@@ -200,3 +200,6 @@
 "Merged" = "合并的文稿";
 "“%@” couldn’t be read as a PDF." = "无法将“%@”读取为 PDF。";
 "“%@” is open. Close it or choose another name." = "“%@”已打开。请先关闭它，或换一个名称。";
+"Copy" = "拷贝";
+"Show markup tools for selected text" = "选中文字时显示标注工具";
+"Highlight, underline, strikethrough, note and copy appear above text you select." = "在选中的文字上方显示高亮、下划线、删除线、笔记和拷贝。";

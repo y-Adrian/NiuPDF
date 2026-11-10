@@ -64,6 +64,8 @@ private struct GeneralSettings: View {
 
             AutosaveSetting()
 
+            SelectionToolbarSetting()
+
             if language != launchLanguage {
                 HStack {
                     Text(L("Takes effect after Paperplane restarts."))
@@ -88,6 +90,21 @@ private struct AutosaveSetting: View {
         VStack(alignment: .leading, spacing: 4) {
             Toggle(L("Save annotations automatically"), isOn: $isAutosaveEnabled)
             Text(L("Changes are written to the PDF a moment after each edit, and when you switch apps or quit."))
+                .font(.callout)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .padding(.top, 8)
+    }
+}
+
+private struct SelectionToolbarSetting: View {
+    @AppStorage(SelectionToolbar.enabledKey) private var isEnabled = true
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Toggle(L("Show markup tools for selected text"), isOn: $isEnabled)
+            Text(L("Highlight, underline, strikethrough, note and copy appear above text you select."))
                 .font(.callout)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)

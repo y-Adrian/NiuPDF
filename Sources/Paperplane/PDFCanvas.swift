@@ -96,7 +96,7 @@ struct PDFCanvas: NSViewRepresentable {
     }
 }
 
-private final class MarkupToolIconButton: NSButton {
+final class MarkupToolIconButton: NSButton {
     let tool: AnnotationTool
     private(set) var isSelectedTool: Bool
 
@@ -142,7 +142,7 @@ private final class MarkupToolIconButton: NSButton {
     }
 }
 
-private final class MarkupColorSwatchButton: NSButton {
+final class MarkupColorSwatchButton: NSButton {
     private(set) var isSelectedColor: Bool
 
     init(selected: Bool, target: AnyObject, action: Selector) {
@@ -204,12 +204,14 @@ private final class MarkupPDFView: PDFView, AnnotationOverlayHost {
     /// Set while a markup tool waits for the text selection a drag produces.
     private var awaitsToolSelection = false
     private(set) lazy var toolHandler = AnnotationToolHandler(view: self, library: readerLibrary, overlayProvider: overlayProvider)
+    private lazy var selectionToolbar = SelectionToolbar(view: self, library: readerLibrary)
 
     func refreshAnnotationOverlays() {
         overlayProvider.refreshAll()
     }
 
     func toolDidChange() {
+        selectionToolbar.hide()
         toolHandler.toolDidChange()
         // Keep selected text for the markup tools, which can mark it.
         if readerLibrary?.activeTool.marksText != true { clearSelection() }
@@ -222,6 +224,7 @@ private final class MarkupPDFView: PDFView, AnnotationOverlayHost {
     /// the drag inside `mouseDown`, so the click is resolved after it returns
     /// or in `mouseUp`, whichever comes.
     override func mouseDown(with event: NSEvent) {
+        selectionToolbar.hide()
         if toolHandler.mouseDown(event) { return }
         let tool = readerLibrary?.activeTool ?? .select
         pendingMarkupClick = tool == .select && event.clickCount == 1 ? markup(at: event) : nil
@@ -267,6 +270,7 @@ private final class MarkupPDFView: PDFView, AnnotationOverlayHost {
     /// With annotations selected, Delete removes them and the arrow keys
     /// nudge them by 1 pt (10 pt with Shift).
     override func keyDown(with event: NSEvent) {
+        selectionToolbar.hide()
         guard let readerLibrary else { return super.keyDown(with: event) }
         if event.keyCode == 53 {
             if readerLibrary.activeTool != .select {
@@ -342,6 +346,20 @@ private final class MarkupPDFView: PDFView, AnnotationOverlayHost {
             }
         }
         resolvePendingMarkupClick()
+        showSelectionToolbarIfNeeded()
+    }
+
+    /// Text selected with the select tool gets the floating markup row.
+    private func showSelectionToolbarIfNeeded() {
+        guard readerLibrary?.activeTool == .select,
+              let selection = currentSelection,
+              !(selection.string ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
+        selectionToolbar.show(for: selection)
+    }
+
+    override func viewWillMove(toWindow newWindow: NSWindow?) {
+        if newWindow == nil { selectionToolbar.hide() }
+        super.viewWillMove(toWindow: newWindow)
     }
 
     private func resolvePendingMarkupClick() {
@@ -381,6 +399,7 @@ private final class MarkupPDFView: PDFView, AnnotationOverlayHost {
     }
 
     override func menu(for event: NSEvent) -> NSMenu? {
+        selectionToolbar.hide()
         guard let selection = selectionForContextMenu(at: event),
               !(selection.string ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
         else {
