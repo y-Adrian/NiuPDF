@@ -68,6 +68,7 @@ struct PaperplaneApp: App {
 struct ReaderCommands: Commands {
     @FocusedObject private var focusedLibrary: ReaderLibrary?
     @ObservedObject private var appModel = AppModel.shared
+    @ObservedObject private var speechReader = SpeechReader.shared
     @Environment(\.openWindow) private var openWindow
 
     /// SwiftUI's focused object can be empty right after tabs change; the key
@@ -138,6 +139,11 @@ struct ReaderCommands: Commands {
                 .disabled(focusedLibrary.map { !$0.hasCopyableSelection } ?? false)
             Button(L("Delete Selected Annotations")) { documentLibrary?.deleteSelectedAnnotations() }
                 .disabled(focusedLibrary.map { $0.selectedAnnotations.isEmpty } ?? false)
+            Divider()
+            Button(L("Read Selection Aloud")) { documentLibrary?.readSelectionAloud() }
+                .disabled(knownEmpty)
+            Button(L("Stop Reading")) { SpeechReader.shared.stop() }
+                .disabled(!speechReader.isSpeaking)
         }
         CommandGroup(after: .textEditing) {
             Button(L("Find…")) { documentLibrary?.focusSearch.toggle() }

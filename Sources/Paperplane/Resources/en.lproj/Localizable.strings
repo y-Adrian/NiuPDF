@@ -288,3 +288,9 @@
 "This document doesn’t allow %@." = "This document doesn’t allow %@.";
 "This document doesn’t allow printing." = "This document doesn’t allow printing.";
 "This document doesn’t allow copying its content, so its pages can’t be exported as images." = "This document doesn’t allow copying its content, so its pages can’t be exported as images.";
+"Translate" = "Translate";
+"Read Aloud" = "Read Aloud";
+"Read Selection Aloud" = "Read Selection Aloud";
+"Stop Reading" = "Stop Reading";
+"Stop" = "Stop";
+"· Reading Aloud" = "· Reading Aloud";

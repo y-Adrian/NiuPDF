@@ -354,7 +354,7 @@ private final class MarkupPDFView: PDFView, AnnotationOverlayHost {
 
     /// Text selected with the select tool gets the floating markup row.
     private func showSelectionToolbarIfNeeded() {
-        guard readerLibrary?.canAnnotate == true, readerLibrary?.activeTool == .select,
+        guard readerLibrary?.activeTool == .select,
               let selection = currentSelection,
               !(selection.string ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
         selectionToolbar.show(for: selection)

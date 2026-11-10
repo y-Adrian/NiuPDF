@@ -205,6 +205,7 @@ struct ReaderWindow: View {
             } else if library.autosaveState == .saved {
                 Text(L("· Saved Automatically"))
             }
+            ReadingIndicator()
             Spacer()
             Text("\(Int(library.zoomScale * 100))%")
                 .monospacedDigit()

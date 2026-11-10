@@ -1,9 +1,10 @@
 import AppKit
 import PDFKit
 
-/// A floating row of markup actions above text selected with the select tool:
-/// a note and Copy, the markup tools, and colors, as in the context menu but
-/// one click away. It is a borderless child panel that never takes focus, so
+/// A floating row of actions above text selected with the select tool: a
+/// note, Copy, Translate and Read Aloud, then the markup tools and colors, as
+/// in the context menu but one click away. What a restricted file forbids is
+/// left out. It is a borderless child panel that never takes focus, so
 /// the PDF view keeps the selection and the keyboard.
 @MainActor
 final class SelectionToolbar: NSObject {
@@ -18,6 +19,10 @@ final class SelectionToolbar: NSObject {
     private var selection: PDFSelection?
     private var toolButtons: [MarkupToolIconButton] = []
     private var swatches: [MarkupColorSwatchButton] = []
+    private var noteButton: NSButton?
+    private var copyButton: NSButton?
+    private var translateButton: NSButton?
+    private var readButton: NSButton?
     private var observers: [NSObjectProtocol] = []
 
     private static let tools = AnnotationTool.markupTools
@@ -62,10 +67,16 @@ final class SelectionToolbar: NSObject {
 
     /// Note and Copy first, then the markup tools, then their colors.
     private func buildRow() {
+        let note = symbolButton("text.bubble", title: L("Add Note"), action: #selector(addNote))
         let copy = symbolButton("doc.on.doc", title: L("Copy"), action: #selector(copyText))
-        stack.addArrangedSubview(symbolButton("text.bubble", title: L("Add Note"), action: #selector(addNote)))
-        stack.addArrangedSubview(copy)
-        stack.setCustomSpacing(8, after: copy)
+        let translate = symbolButton("translate", title: L("Translate"), action: #selector(translate))
+        let read = symbolButton("speaker.wave.2", title: L("Read Aloud"), action: #selector(readAloud))
+        for button in [note, copy, translate, read] { stack.addArrangedSubview(button) }
+        stack.setCustomSpacing(8, after: read)
+        noteButton = note
+        copyButton = copy
+        translateButton = translate
+        readButton = read
 
         toolButtons = Self.tools.map { tool in
             let button = MarkupToolIconButton(tool: tool, selected: false, target: self, action: #selector(pickTool(_:)))
@@ -111,6 +122,19 @@ final class SelectionToolbar: NSObject {
         for button in toolButtons { button.setSelectedTool(button.tool == tool) }
         let color = library?.color(for: tool) ?? .yellow
         for (index, swatch) in swatches.enumerated() { swatch.setSelectedColor(MarkupColor.allCases[index] == color) }
+        let canAnnotate = library?.canAnnotate ?? false
+        let canCopy = library?.canCopy ?? false
+        noteButton?.isHidden = !canAnnotate
+        for button in toolButtons { button.isHidden = !canAnnotate }
+        for swatch in swatches { swatch.isHidden = !canAnnotate }
+        copyButton?.isHidden = !canCopy
+        // Translating hands the text on, as copying does.
+        translateButton?.isHidden = !canCopy || !SelectionTranslator.isAvailable
+        let speaking = SpeechReader.shared.isSpeaking
+        readButton?.image = NSImage(systemSymbolName: speaking ? "stop.circle" : "speaker.wave.2",
+                                    accessibilityDescription: speaking ? L("Stop Reading") : L("Read Aloud"))
+        readButton?.toolTip = speaking ? L("Stop Reading") : L("Read Aloud")
+        readButton?.setAccessibilityLabel(readButton?.toolTip)
         guard place() else { return hide() }
         if panel.parent == nil { window.addChildWindow(panel, ordered: .above) }
         panel.orderFront(nil)
@@ -210,6 +234,29 @@ final class SelectionToolbar: NSObject {
         guard let selection, let library else { return }
         hide()
         library.addNote(in: selection)
+    }
+
+    /// The system translation popover under the selected text.
+    @objc private func translate() {
+        guard let view, let selection, let text = selection.string else { return }
+        hide()
+        let rects = selection.selectionsByLine().compactMap { line in
+            line.pages.first.map { view.convert(line.bounds(for: $0), from: $0) }
+        }
+        guard let first = rects.first else { return }
+        let bounds = rects.dropFirst().reduce(first) { $0.union($1) }
+        SelectionTranslator.show(text, below: bounds.intersection(view.bounds), in: view)
+    }
+
+    /// Reads the selection aloud, or stops the voice that is reading.
+    @objc private func readAloud() {
+        guard let text = selection?.string else { return }
+        hide()
+        if SpeechReader.shared.isSpeaking {
+            SpeechReader.shared.stop()
+        } else {
+            SpeechReader.shared.speak(text)
+        }
     }
 
     /// Copies the selected text and keeps it selected.
