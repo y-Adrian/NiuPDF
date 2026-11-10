@@ -68,6 +68,11 @@ struct AnnotationListItem: Identifiable {
     let page: PDFPage
     let pageIndex: Int
     let kind: String
+    let listKind: AnnotationListKind
+    /// The color the annotation shows: a text box's text color, otherwise its own.
+    let color: MarkupColor
+    /// `userName`, trimmed; empty when the annotation names no author.
+    let author: String
     let text: String
     /// The note attached to markup; empty for standalone notes, whose text is `text`.
     let note: String
@@ -396,6 +401,7 @@ final class ReaderLibrary: ObservableObject {
         searchText = ""
         searchResults = []
         searchResultIndex = 0
+        annotationListFilter = AnnotationListFilter()
         selectedPages = []
         pageSelectionAnchor = nil
         selectedAnnotations = []
@@ -1189,18 +1195,8 @@ final class ReaderLibrary: ObservableObject {
 
     /// The background a text box shows, or nil when it is clear.
     static func background(of box: PDFAnnotation) -> MarkupColor? {
-        guard box.color.alphaComponent > 0, let color = box.color.usingColorSpace(.deviceRGB) else { return nil }
-        return MarkupColor.backgroundCases.min { distance($0, color) < distance($1, color) }
-            .flatMap { distance($0, color) < 0.05 ? $0 : MarkupColor(hex: hex(of: color), title: "#" + hex(of: color)) }
-    }
-
-    private static func distance(_ candidate: MarkupColor, _ color: NSColor) -> CGFloat {
-        guard let other = candidate.nsColor.usingColorSpace(.deviceRGB) else { return 1 }
-        return abs(other.redComponent - color.redComponent) + abs(other.greenComponent - color.greenComponent) + abs(other.blueComponent - color.blueComponent)
-    }
-
-    private static func hex(of color: NSColor) -> String {
-        String(format: "%02X%02X%02X", Int(color.redComponent * 255), Int(color.greenComponent * 255), Int(color.blueComponent * 255))
+        guard box.color.alphaComponent > 0, box.color.usingColorSpace(.deviceRGB) != nil else { return nil }
+        return MarkupColor(nearest: box.color, among: MarkupColor.backgroundCases)
     }
 
     /// Toolbar background and border: the defaults for new text boxes, also
@@ -1587,6 +1583,9 @@ final class ReaderLibrary: ObservableObject {
         "Stamp": L("Stamp")
     ]
 
+    /// Narrows the annotation list; cleared when another file opens.
+    @Published var annotationListFilter = AnnotationListFilter()
+
     private var annotationListCache: (revision: Int, document: ObjectIdentifier, items: [AnnotationListItem])?
 
     /// Every user-facing annotation in page order. Links, form widgets and popups
@@ -1607,6 +1606,7 @@ final class ReaderLibrary: ObservableObject {
             guard let page = document.page(at: index) else { continue }
             for annotation in page.annotations {
                 guard let type = annotation.type, let kind = MarkupEngine.tool(of: annotation)?.title ?? Self.listedAnnotationKinds[type],
+                      let listKind = AnnotationListKind.of(annotation),
                       pendingCreation?.annotation !== annotation else { continue }
                 var text = ""
                 var noteText = note(of: annotation)
@@ -1625,6 +1625,9 @@ final class ReaderLibrary: ObservableObject {
                     page: page,
                     pageIndex: index,
                     kind: kind,
+                    listKind: listKind,
+                    color: MarkupColor(nearest: displayColor(of: annotation).withAlphaComponent(1), among: MarkupColor.drawingCases),
+                    author: annotation.userName?.trimmingCharacters(in: .whitespacesAndNewlines) ?? "",
                     text: text.split(whereSeparator: \.isWhitespace).joined(separator: " "),
                     note: noteText
                 ))

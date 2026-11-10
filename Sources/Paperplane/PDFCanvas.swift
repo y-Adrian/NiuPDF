@@ -831,13 +831,63 @@ struct SearchResultsSidebar: View {
     }
 }
 
-/// All annotations in page order. Click reveals and selects one; ⌘- or
-/// ⇧-click selects several, which Delete or the context menu removes together.
+/// All annotations in page order, narrowed by the window's filter. Click reveals
+/// and selects one; ⌘- or ⇧-click selects several, which Delete or the context
+/// menu removes together.
 struct AnnotationListSidebar: View {
     @EnvironmentObject private var library: ReaderLibrary
     let items: [AnnotationListItem]
+    @State private var isShowingFilter = false
+
+    private var shownItems: [AnnotationListItem] {
+        let filter = library.annotationListFilter
+        return filter.isActive ? items.filter(filter.matches) : items
+    }
 
     var body: some View {
+        VStack(spacing: 0) {
+            if !items.isEmpty {
+                filterBar
+                Divider()
+            }
+            list
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(Color(nsColor: .controlBackgroundColor))
+    }
+
+    private var filterBar: some View {
+        let filter = library.annotationListFilter
+        return HStack(spacing: 6) {
+            Button { isShowingFilter.toggle() } label: {
+                Image(systemName: filter.isActive ? "line.3.horizontal.decrease.circle.fill" : "line.3.horizontal.decrease.circle")
+                    .foregroundStyle(filter.isActive ? Color.accentColor : .secondary)
+                    .font(.system(size: 14))
+            }
+            .buttonStyle(.plain)
+            .help(L("Filter Annotations"))
+            .accessibilityLabel(L("Filter Annotations"))
+            .popover(isPresented: $isShowingFilter, arrowEdge: .bottom) {
+                AnnotationFilterPopover(items: items)
+                    .environmentObject(library)
+            }
+            Text(filter.isActive ? L("%ld of %ld", shownItems.count, items.count) : (items.count == 1 ? L("1 Annotation") : L("%ld Annotations", items.count)))
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .monospacedDigit()
+            Spacer(minLength: 0)
+            if filter.isActive {
+                Button(L("Clear")) { library.annotationListFilter = AnnotationListFilter() }
+                    .buttonStyle(.link)
+                    .font(.caption)
+                    .help(L("Clear Filters"))
+            }
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 6)
+    }
+
+    private var list: some View {
         Group {
             if items.isEmpty {
                 VStack(spacing: 8) {
@@ -853,10 +903,22 @@ struct AnnotationListSidebar: View {
                         .multilineTextAlignment(.center)
                 }
                 .padding(12)
+            } else if shownItems.isEmpty {
+                VStack(spacing: 8) {
+                    Image(systemName: "line.3.horizontal.decrease.circle")
+                        .font(.title3)
+                        .foregroundStyle(.tertiary)
+                    Text(L("No Matching Annotations"))
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    Button(L("Clear Filters")) { library.annotationListFilter = AnnotationListFilter() }
+                        .controlSize(.small)
+                }
+                .padding(12)
             } else {
                 ScrollView {
                     LazyVStack(alignment: .leading, spacing: 6) {
-                        ForEach(items) { item in
+                        ForEach(shownItems) { item in
                             Button { choose(item) } label: {
                                 row(for: item)
                                     .background(library.isSelected(item.annotation) ? Color.accentColor.opacity(0.14) : .clear,
@@ -871,7 +933,6 @@ struct AnnotationListSidebar: View {
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(Color(nsColor: .controlBackgroundColor))
     }
 
     private func choose(_ item: AnnotationListItem) {
@@ -893,7 +954,7 @@ struct AnnotationListSidebar: View {
     private func row(for item: AnnotationListItem) -> some View {
         HStack(alignment: .top, spacing: 8) {
             Circle()
-                .fill(Color(nsColor: item.annotation.color.withAlphaComponent(1)))
+                .fill(Color(nsColor: item.color.nsColor))
                 .frame(width: 9, height: 9)
                 .padding(.top, 3)
             VStack(alignment: .leading, spacing: 3) {

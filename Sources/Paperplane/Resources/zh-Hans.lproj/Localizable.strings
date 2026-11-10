@@ -234,3 +234,13 @@
 "Bookmarked" = "已加书签";
 "Rename" = "重命名";
 "Press ⌘B to bookmark the current page." = "按 ⌘B 为当前页添加书签。";
+"Filter Annotations" = "筛选批注";
+"%ld of %ld" = "显示 %1$ld 条，共 %2$ld 条";
+"1 Annotation" = "共 1 条批注";
+"%ld Annotations" = "共 %ld 条批注";
+"No Matching Annotations" = "没有符合条件的批注";
+"Clear Filters" = "清除筛选";
+"Type" = "类型";
+"Color" = "颜色";
+"Author" = "作者";
+"No Author" = "未署名";

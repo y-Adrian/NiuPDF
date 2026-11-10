@@ -234,3 +234,13 @@
 "Bookmarked" = "Bookmarked";
 "Rename" = "Rename";
 "Press ⌘B to bookmark the current page." = "Press ⌘B to bookmark the current page.";
+"Filter Annotations" = "Filter Annotations";
+"%ld of %ld" = "%1$ld of %2$ld";
+"1 Annotation" = "1 Annotation";
+"%ld Annotations" = "%ld Annotations";
+"No Matching Annotations" = "No Matching Annotations";
+"Clear Filters" = "Clear Filters";
+"Type" = "Type";
+"Color" = "Color";
+"Author" = "Author";
+"No Author" = "No Author";
