@@ -87,7 +87,7 @@ final class MergeModel: ObservableObject {
                 errorMessage = L("“%@” couldn’t be read as a PDF.", url.lastPathComponent)
                 continue
             }
-            if document.isLocked, ReaderLibrary.askForPassword(unlocking: document, named: url.lastPathComponent) == nil { continue }
+            if document.isLocked, ReaderLibrary.askForPassword(unlocking: document, at: url) == nil { continue }
             added.append(MergeItem(url: url, document: document))
         }
         items.insert(contentsOf: added, at: min(position ?? items.count, items.count))

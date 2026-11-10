@@ -115,7 +115,7 @@ extension ReaderLibrary {
                 errorMessage = SafePDFFileStoreError.unreadablePDF.localizedDescription
                 return
             }
-            if source.isLocked, !unlock(source, named: url.lastPathComponent) { return }
+            if source.isLocked, !unlock(source, at: url) { return }
             // Copies carry their annotations and stay valid after the source closes.
             inserted += (0..<source.pageCount).compactMap { source.page(at: $0).flatMap(DocumentMerger.copy(of:)) }
         }

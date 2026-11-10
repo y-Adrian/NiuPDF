@@ -244,3 +244,14 @@
 "Color" = "Color";
 "Author" = "Author";
 "No Author" = "No Author";
+"The saved password no longer opens “%@”. Enter its current password." = "The saved password no longer opens “%@”. Enter its current password.";
+"Remember password in Keychain" = "Remember password in Keychain";
+"Saved Passwords" = "Saved Passwords";
+"Choose “Remember password in Keychain” when opening a protected PDF, and it opens without asking next time." = "Choose “Remember password in Keychain” when opening a protected PDF, and it opens without asking next time.";
+"Forget Password" = "Forget Password";
+"Forget Password for “%@”" = "Forget Password for “%@”";
+"Remembered passwords open these files without asking." = "Remembered passwords open these files without asking.";
+"Forget All…" = "Forget All…";
+"Forget all saved passwords?" = "Forget all saved passwords?";
+"These files will ask for their passwords again." = "These files will ask for their passwords again.";
+"Forget All" = "Forget All";

@@ -66,6 +66,8 @@ private struct GeneralSettings: View {
 
             SelectionToolbarSetting()
 
+            SavedPasswordsSetting()
+
             if language != launchLanguage {
                 HStack {
                     Text(L("Takes effect after Paperplane restarts."))
@@ -110,6 +112,77 @@ private struct SelectionToolbarSetting: View {
                 .fixedSize(horizontal: false, vertical: true)
         }
         .padding(.top, 8)
+    }
+}
+
+/// Files whose passwords are remembered in the keychain, each removable.
+private struct SavedPasswordsSetting: View {
+    @State private var entries: [PasswordKeychain.Entry] = []
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text(L("Saved Passwords"))
+            if entries.isEmpty {
+                Text(L("Choose “Remember password in Keychain” when opening a protected PDF, and it opens without asking next time."))
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            } else {
+                ScrollView {
+                    VStack(spacing: 0) {
+                        ForEach(entries) { entry in
+                            HStack {
+                                Image(systemName: "lock.doc")
+                                    .foregroundStyle(.secondary)
+                                Text(entry.fileName)
+                                    .lineLimit(1)
+                                    .truncationMode(.middle)
+                                    .help(entry.path)
+                                Spacer()
+                                Button {
+                                    PasswordKeychain.remove(path: entry.path)
+                                } label: {
+                                    Image(systemName: "minus.circle")
+                                }
+                                .buttonStyle(.borderless)
+                                .help(L("Forget Password"))
+                                .accessibilityLabel(L("Forget Password for “%@”", entry.fileName))
+                            }
+                            .padding(.vertical, 4)
+                            .padding(.horizontal, 8)
+                        }
+                    }
+                }
+                .frame(maxHeight: 120)
+                .fixedSize(horizontal: false, vertical: true)
+                .background(Color(nsColor: .controlBackgroundColor), in: RoundedRectangle(cornerRadius: 6))
+                HStack {
+                    Text(L("Remembered passwords open these files without asking."))
+                        .font(.callout)
+                        .foregroundStyle(.secondary)
+                    Spacer()
+                    Button(L("Forget All…"), action: confirmForgetAll)
+                }
+            }
+        }
+        .padding(.top, 8)
+        .onAppear(perform: reload)
+        .onReceive(NotificationCenter.default.publisher(for: PasswordKeychain.didChange)) { _ in reload() }
+    }
+
+    private func reload() {
+        entries = PasswordKeychain.entries()
+    }
+
+    private func confirmForgetAll() {
+        let alert = NSAlert()
+        alert.messageText = L("Forget all saved passwords?")
+        alert.informativeText = L("These files will ask for their passwords again.")
+        alert.addButton(withTitle: L("Forget All"))
+        alert.addButton(withTitle: L("Cancel"))
+        alert.buttons.first?.hasDestructiveAction = true
+        guard alert.runModal() == .alertFirstButtonReturn else { return }
+        PasswordKeychain.removeAll()
     }
 }
 

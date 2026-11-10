@@ -365,7 +365,7 @@ final class ReaderLibrary: ObservableObject {
 
         let previousPassword = documentPassword
         documentPassword = nil
-        if opened.document.isLocked, !unlock(opened.document, named: url.lastPathComponent) {
+        if opened.document.isLocked, !unlock(opened.document, at: url) {
             Logger.opening.info("Password entry cancelled for \(url.lastPathComponent, privacy: .public)")
             documentPassword = previousPassword
             if didStartAccess { url.stopAccessingSecurityScopedResource() }
@@ -411,28 +411,61 @@ final class ReaderLibrary: ObservableObject {
         Logger.opening.info("Opened \(url.lastPathComponent, privacy: .public) (\(opened.document.pageCount) pages) in window \(self.window?.windowNumber ?? -1); window visible: \(self.window?.isVisible ?? false)")
     }
 
-    /// Asks for the user password of an encrypted PDF until it unlocks or the user cancels.
-    func unlock(_ document: PDFDocument, named name: String) -> Bool {
-        guard let password = Self.askForPassword(unlocking: document, named: name) else { return false }
+    /// Unlocks an encrypted PDF with its saved or entered password; false when the user cancels.
+    func unlock(_ document: PDFDocument, at url: URL) -> Bool {
+        guard let password = Self.askForPassword(unlocking: document, at: url) else { return false }
         // Kept in memory only, to unlock the copies that exports render from.
         documentPassword = password
         return true
     }
 
-    /// Asks until the password unlocks `document`; nil when the user cancels.
-    static func askForPassword(unlocking document: PDFDocument, named name: String) -> String? {
+    /// Whether the password prompt offers to remember the password, as last chosen.
+    static let remembersPasswordsKey = "remembersDocumentPasswords"
+
+    /// The password saved in the keychain for this file while it still works;
+    /// otherwise asks until a password unlocks `document`, and saves it when
+    /// the user chooses to. Nil when the user cancels.
+    static func askForPassword(unlocking document: PDFDocument, at url: URL) -> String? {
+        let name = url.lastPathComponent
         var message = L("“%@” is password protected. Enter its password to open it.", name)
+        var remembers = UserDefaults.standard.bool(forKey: remembersPasswordsKey)
+        if let saved = PasswordKeychain.password(for: url) {
+            if document.unlock(withPassword: saved) {
+                Logger.opening.info("Unlocked \(name, privacy: .public) with its saved password")
+                return saved
+            }
+            // The file's password changed since it was saved.
+            PasswordKeychain.remove(for: url)
+            message = L("The saved password no longer opens “%@”. Enter its current password.", name)
+            remembers = true
+        }
         while true {
             let alert = NSAlert()
             alert.messageText = L("Enter Document Password")
             alert.informativeText = message
             alert.addButton(withTitle: L("Open"))
             alert.addButton(withTitle: L("Cancel"))
-            let field = NSSecureTextField(frame: NSRect(x: 0, y: 0, width: 240, height: 24))
-            alert.accessoryView = field
+            let accessory = NSView(frame: NSRect(x: 0, y: 0, width: 260, height: 54))
+            let field = NSSecureTextField(frame: NSRect(x: 0, y: 30, width: 240, height: 24))
+            let checkbox = NSButton(checkboxWithTitle: L("Remember password in Keychain"), target: nil, action: nil)
+            checkbox.state = remembers ? .on : .off
+            checkbox.sizeToFit()
+            checkbox.frame.origin = .zero
+            accessory.frame.size.width = max(240, checkbox.frame.width)
+            accessory.addSubview(field)
+            accessory.addSubview(checkbox)
+            alert.accessoryView = accessory
             alert.window.initialFirstResponder = field
             guard alert.runModal() == .alertFirstButtonReturn else { return nil }
-            if document.unlock(withPassword: field.stringValue) { return field.stringValue }
+            remembers = checkbox.state == .on
+            UserDefaults.standard.set(remembers, forKey: remembersPasswordsKey)
+            let password = field.stringValue
+            if document.unlock(withPassword: password) {
+                if remembers, !PasswordKeychain.save(password, for: url) {
+                    Logger.opening.error("Couldn’t save the password of \(name, privacy: .public) to the keychain")
+                }
+                return password
+            }
             message = L("Incorrect password. Try again.")
         }
     }
