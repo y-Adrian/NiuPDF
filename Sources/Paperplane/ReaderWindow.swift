@@ -568,6 +568,30 @@ private struct AnnotationToolBar: View {
                 .menuStyle(.borderlessButton)
                 .fixedSize()
                 .help(L("Font Size"))
+                Menu {
+                    Button(L("None")) { library.chooseTextBoxBackground(nil) }
+                    Divider()
+                    ForEach(MarkupColor.backgroundCases) { color in
+                        Button { library.chooseTextBoxBackground(color) } label: {
+                            Label { Text(color.title) } icon: { Image(nsImage: TextBoxStyleImages.swatch(color)) }
+                        }
+                    }
+                } label: {
+                    Text(library.textBoxBackground.map { L("Background: %@", $0.title) } ?? L("No Background"))
+                }
+                .menuStyle(.borderlessButton)
+                .fixedSize()
+                .help(L("Background"))
+                Menu {
+                    ForEach(ReaderLibrary.textBoxBorderWidths, id: \.self) { width in
+                        Button(width == 0 ? L("None") : L("%ld pt", Int(width))) { library.chooseTextBoxBorder(width) }
+                    }
+                } label: {
+                    Text(library.textBoxBorderWidth == 0 ? L("No Border") : L("Border: %@", L("%ld pt", Int(library.textBoxBorderWidth))))
+                }
+                .menuStyle(.borderlessButton)
+                .fixedSize()
+                .help(L("Border"))
             }
         }
     }

@@ -223,7 +223,9 @@ final class InlineTextBoxEditor: NSObject, NSTextViewDelegate {
         textView.string = box.contents ?? ""
         textView.isRichText = false
         textView.allowsUndo = true
-        textView.drawsBackground = false
+        // The overlay skips the box while it is typed into; show its background here.
+        textView.drawsBackground = box.color.alphaComponent > 0
+        textView.backgroundColor = box.color.alphaComponent > 0 ? box.color : .clear
         textView.textContainerInset = NSSize(width: 0, height: 2)
         textView.textContainer?.widthTracksTextView = true
         textView.isVerticallyResizable = false
@@ -258,6 +260,9 @@ final class InlineTextBoxEditor: NSObject, NSTextViewDelegate {
 
     /// Follows font, size and color chosen in the toolbar while typing.
     private func applyBoxStyle() {
+        // The overlay skips the box while it is typed into; show its background here.
+        textView.drawsBackground = box.color.alphaComponent > 0
+        textView.backgroundColor = box.color.alphaComponent > 0 ? box.color : .clear
         textView.font = box.font ?? .systemFont(ofSize: ReaderLibrary.textBoxFontSize)
         textView.textColor = box.fontColor ?? .black
         textView.insertionPointColor = box.fontColor ?? .black
@@ -359,6 +364,13 @@ enum VectorAnnotationRenderer {
         if box.color.alphaComponent > 0 {
             box.color.setFill()
             box.bounds.fill()
+        }
+        // Black inside the box's edge, as PDFKit draws it for other readers.
+        if let width = box.border?.lineWidth, width > 0 {
+            let frame = NSBezierPath(rect: box.bounds.insetBy(dx: width / 2, dy: width / 2))
+            frame.lineWidth = width
+            NSColor.black.setStroke()
+            frame.stroke()
         }
         let paragraph = NSMutableParagraphStyle()
         paragraph.alignment = box.alignment

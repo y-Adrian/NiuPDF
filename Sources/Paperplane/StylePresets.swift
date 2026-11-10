@@ -11,12 +11,18 @@ struct StylePreset: Codable, Identifiable, Equatable {
     var lineWidth: Double?
     var fontFamily: String?
     var fontSize: Double?
+    var backgroundHex: String?
+    var borderWidth: Double?
 
     var annotationTool: AnnotationTool? { AnnotationTool(rawValue: tool) }
 
     var color: MarkupColor {
         let hex = colorHex.uppercased()
         return (MarkupColor.allCases + MarkupColor.drawingCases).first { $0.hex == hex } ?? MarkupColor(hex: hex, title: "#" + hex)
+    }
+
+    var backgroundColor: MarkupColor? {
+        backgroundHex.map { hex in MarkupColor.backgroundCases.first { $0.hex == hex } ?? MarkupColor(hex: hex, title: "#" + hex) }
     }
 
     /// Such as "Highlight · Yellow · 50%" or "Draw · Red · 100% · 3 pt".
@@ -26,6 +32,8 @@ struct StylePreset: Codable, Identifiable, Equatable {
         if annotationTool == .textBox {
             parts.append(FontChoices.displayName(fontFamily))
             if let fontSize { parts.append(L("%ld pt", Int(fontSize))) }
+            if let background = backgroundColor { parts.append(L("Background: %@", background.title)) }
+            if let borderWidth, borderWidth > 0 { parts.append(L("Border: %@", L("%ld pt", Int(borderWidth)))) }
         }
         return parts.joined(separator: " · ")
     }
@@ -87,7 +95,9 @@ extension ReaderLibrary {
             opacity: Double(opacity(for: tool)),
             lineWidth: tool == .ink || tool.isShape ? Double(strokeWidth) : nil,
             fontFamily: tool == .textBox ? textFontFamily : nil,
-            fontSize: tool == .textBox ? Double(textFontSize) : nil
+            fontSize: tool == .textBox ? Double(textFontSize) : nil,
+            backgroundHex: tool == .textBox ? textBoxBackground?.hex : nil,
+            borderWidth: tool == .textBox ? Double(textBoxBorderWidth) : nil
         )
     }
 
@@ -98,7 +108,11 @@ extension ReaderLibrary {
         isAnnotationBarVisible = true
         chooseOpacity(CGFloat(preset.opacity), for: tool)
         if let width = preset.lineWidth { chooseStrokeWidth(CGFloat(width)) }
-        if tool == .textBox { chooseTextFont(family: preset.fontFamily, size: CGFloat(preset.fontSize ?? Double(Self.textBoxFontSize))) }
+        if tool == .textBox {
+            chooseTextFont(family: preset.fontFamily, size: CGFloat(preset.fontSize ?? Double(Self.textBoxFontSize)))
+            chooseTextBoxBackground(preset.backgroundColor)
+            chooseTextBoxBorder(CGFloat(preset.borderWidth ?? 0))
+        }
         chooseColor(preset.color, for: tool)
         activeTool = tool
     }
@@ -151,6 +165,24 @@ struct StylePresetMenu: View {
             NSColor.black.withAlphaComponent(0.25).setStroke()
             circle.lineWidth = 0.75
             circle.stroke()
+            return true
+        }
+        image.isTemplate = false
+        return image
+    }
+}
+
+/// Small images for text box style menus, which show images, not shapes.
+enum TextBoxStyleImages {
+    /// A rounded square in a background color, outlined so white shows.
+    static func swatch(_ color: MarkupColor) -> NSImage {
+        let image = NSImage(size: NSSize(width: 14, height: 14), flipped: false) { rect in
+            let square = NSBezierPath(roundedRect: rect.insetBy(dx: 1, dy: 1), xRadius: 3, yRadius: 3)
+            color.nsColor.setFill()
+            square.fill()
+            NSColor.black.withAlphaComponent(0.3).setStroke()
+            square.lineWidth = 0.75
+            square.stroke()
             return true
         }
         image.isTemplate = false

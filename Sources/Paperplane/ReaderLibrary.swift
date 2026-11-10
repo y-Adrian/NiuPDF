@@ -104,6 +104,15 @@ struct MarkupColor: Identifiable, Hashable {
     static let allCases = [yellow, orange, red, green, cyan, blue, purple]
     /// Colors for text boxes, drawings and shapes; black is no use as a highlight.
     static let drawingCases = [black, red, orange, yellow, green, cyan, blue, purple]
+
+    static let white = MarkupColor(hex: "FFFFFF", title: L("White"))
+    static let lightYellow = MarkupColor(hex: "FFF6BF", title: L("Light Yellow"))
+    static let lightBlue = MarkupColor(hex: "DCEEFF", title: L("Light Blue"))
+    static let lightGreen = MarkupColor(hex: "DDF5DF", title: L("Light Green"))
+    static let lightPink = MarkupColor(hex: "FFE1E1", title: L("Light Pink"))
+    static let lightGray = MarkupColor(hex: "EDEDED", title: L("Light Gray"))
+    /// Text box backgrounds: light, opaque colors that keep text readable.
+    static let backgroundCases = [white, lightYellow, lightBlue, lightGreen, lightPink, lightGray]
 }
 
 /// The annotation tools in the toolbar. A tool stays active for repeated use,
@@ -187,6 +196,11 @@ final class ReaderLibrary: ObservableObject {
     /// Font family for new text boxes; nil is the system font.
     @Published var textFontFamily: String?
     @Published var textFontSize: CGFloat = 14
+    /// Background of new text boxes; nil leaves them clear.
+    @Published var textBoxBackground: MarkupColor?
+    /// Border of new text boxes in points; 0 is none. Borders are black, as
+    /// PDFKit draws them in other readers whatever the color asked for.
+    @Published var textBoxBorderWidth: CGFloat = 0
     /// Set by the text box editor so style changes reach the box being typed.
     var onTypingStyleChange: (() -> Void)?
     /// The markup tool last applied, which the context menu's colors apply to.
@@ -1062,11 +1076,9 @@ final class ReaderLibrary: ObservableObject {
         )
         box.font = font
         box.fontColor = styledColor(for: .textBox)
-        box.color = .clear
+        box.color = textBoxBackground?.nsColor ?? .clear
         box.alignment = .left
-        let border = PDFBorder()
-        border.lineWidth = 0
-        box.border = border
+        box.border = Self.border(width: textBoxBorderWidth)
         box.contents = ""
         Self.stampTextStyle(of: box)
         let edit = captureAnnotationEdit(pages: [page]) { page.addAnnotation(box) }
@@ -1200,6 +1212,75 @@ final class ReaderLibrary: ObservableObject {
         annotationsDidChange()
     }
 
+    static let textBoxBorderWidths: [CGFloat] = [0, 1, 2, 3]
+
+    /// The background a text box shows, or nil when it is clear.
+    static func background(of box: PDFAnnotation) -> MarkupColor? {
+        guard box.color.alphaComponent > 0, let color = box.color.usingColorSpace(.deviceRGB) else { return nil }
+        return MarkupColor.backgroundCases.min { distance($0, color) < distance($1, color) }
+            .flatMap { distance($0, color) < 0.05 ? $0 : MarkupColor(hex: hex(of: color), title: "#" + hex(of: color)) }
+    }
+
+    private static func distance(_ candidate: MarkupColor, _ color: NSColor) -> CGFloat {
+        guard let other = candidate.nsColor.usingColorSpace(.deviceRGB) else { return 1 }
+        return abs(other.redComponent - color.redComponent) + abs(other.greenComponent - color.greenComponent) + abs(other.blueComponent - color.blueComponent)
+    }
+
+    private static func hex(of color: NSColor) -> String {
+        String(format: "%02X%02X%02X", Int(color.redComponent * 255), Int(color.greenComponent * 255), Int(color.blueComponent * 255))
+    }
+
+    /// Toolbar background and border: the defaults for new text boxes, also
+    /// applied to the text box being typed.
+    func chooseTextBoxBackground(_ color: MarkupColor?) {
+        textBoxBackground = color
+        if let box = annotationBeingTyped {
+            setBackground(of: box, to: color)
+            onTypingStyleChange?()
+        }
+    }
+
+    func chooseTextBoxBorder(_ width: CGFloat) {
+        textBoxBorderWidth = width
+        if let box = annotationBeingTyped {
+            setBorderWidth(of: box, to: width)
+            onTypingStyleChange?()
+        }
+    }
+
+    func setBackground(of box: PDFAnnotation, to color: MarkupColor?) {
+        let previous = Self.background(of: box)
+        guard previous?.hex != color?.hex else { return }
+        textBoxBackground = color
+        box.color = color?.nsColor ?? .clear
+        if pendingCreation?.annotation === box {
+            refreshPDFView()
+            return
+        }
+        pdfView?.undoManager?.registerUndo(withTarget: self) { target in
+            target.setBackground(of: box, to: previous)
+        }
+        pdfView?.undoManager?.setActionName(L("Change Background"))
+        annotationsDidChange()
+    }
+
+    func setBorderWidth(of box: PDFAnnotation, to width: CGFloat) {
+        let previous = box.border?.lineWidth ?? 0
+        guard abs(previous - width) > 0.01 else { return }
+        textBoxBorderWidth = width
+        box.border = Self.border(width: width)
+        Self.stampTextStyle(of: box)
+        if pendingCreation?.annotation === box {
+            refreshPDFView()
+            return
+        }
+        pdfView?.undoManager?.registerUndo(withTarget: self) { target in
+            target.setBorderWidth(of: box, to: previous)
+        }
+        pdfView?.undoManager?.setActionName(L("Change Border"))
+        annotationsDidChange()
+    }
+
     func setFont(of box: PDFAnnotation, family: String?, size: CGFloat) {
         let previous = (family: Self.fontFamily(of: box), size: box.font?.pointSize ?? Self.textBoxFontSize)
         guard previous.family != family || abs(previous.size - size) > 0.01 else { return }
@@ -1293,8 +1374,9 @@ final class ReaderLibrary: ObservableObject {
     /// PDFKit writes a text box's font and color only into its appearance
     /// stream, which other readers show correctly, but reads the box back as
     /// black 12 pt Helvetica with a 1 pt border. Text boxes made here also keep
-    /// "size r g b a font" (a PostScript name, or "system") under this key,
-    /// restored when the document opens.
+    /// "size r g b a font border" (a PostScript name, or "system"; the border
+    /// width in points) under this key, restored when the document opens.
+    /// The background is the annotation color, which PDFKit keeps.
     private static let textStyleKey = PDFAnnotationKey(rawValue: "/PaperplaneTextStyle")
 
     private static func stampTextStyle(of box: PDFAnnotation) {
@@ -1302,7 +1384,7 @@ final class ReaderLibrary: ObservableObject {
         let color = (box.fontColor ?? .black).usingColorSpace(.deviceRGB) ?? .black
         let values = [size, color.redComponent, color.greenComponent, color.blueComponent, color.alphaComponent]
         let fontName = fontFamily(of: box) == nil ? "system" : (box.font?.fontName ?? "system")
-        let style = values.map { String(format: "%.3f", $0) } + [fontName]
+        let style = values.map { String(format: "%.3f", $0) } + [fontName, String(format: "%.1f", box.border?.lineWidth ?? 0)]
         box.setValue(style.joined(separator: " "), forAnnotationKey: textStyleKey)
     }
 
@@ -1315,7 +1397,9 @@ final class ReaderLibrary: ObservableObject {
         let fontName = tokens.count > 5 ? tokens[5] : "system"
         box.font = fontName == "system" ? .systemFont(ofSize: values[0]) : (NSFont(name: fontName, size: values[0]) ?? .systemFont(ofSize: values[0]))
         box.fontColor = NSColor(deviceRed: values[1], green: values[2], blue: values[3], alpha: values[4])
-        box.border = border(width: 0)
+        // Boxes stamped before borders existed have none.
+        let borderWidth = tokens.count > 6 ? Double(tokens[6]).map { CGFloat($0) } ?? 0 : 0
+        box.border = border(width: borderWidth)
         return true
     }
 

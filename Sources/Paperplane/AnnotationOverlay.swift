@@ -504,6 +504,10 @@ final class AnnotationEditorController: NSViewController, NSPopoverDelegate {
             rows.append(styleRow)
             rows.append(Self.hairline())
         }
+        if annotation.type == "FreeText" {
+            rows.append(boxRow())
+            rows.append(Self.hairline())
+        }
 
         if showsNoteField { rows += noteRows() }
 
@@ -554,6 +558,61 @@ final class AnnotationEditorController: NSViewController, NSPopoverDelegate {
     @objc private func pickOpacity(_ sender: NSSegmentedControl) {
         guard ReaderLibrary.opacities.indices.contains(sender.selectedSegment) else { return }
         library?.setOpacity(annotation, to: ReaderLibrary.opacities[sender.selectedSegment])
+    }
+
+    /// Background and border of a text box.
+    private func boxRow() -> NSView {
+        let background = NSPopUpButton()
+        background.addItem(withTitle: L("None"))
+        background.menu?.addItem(.separator())
+        for color in MarkupColor.backgroundCases {
+            let item = NSMenuItem(title: color.title, action: nil, keyEquivalent: "")
+            item.image = TextBoxStyleImages.swatch(color)
+            item.representedObject = color.hex
+            background.menu?.addItem(item)
+        }
+        let current = ReaderLibrary.background(of: annotation)?.hex
+        if let index = background.itemArray.firstIndex(where: { ($0.representedObject as? String) == current }) {
+            background.selectItem(at: index)
+        }
+        background.target = self
+        background.action = #selector(pickBackground(_:))
+        background.setAccessibilityLabel(L("Background"))
+
+        let border = NSPopUpButton()
+        for width in ReaderLibrary.textBoxBorderWidths {
+            border.addItem(withTitle: width == 0 ? L("None") : L("%ld pt", Int(width)))
+            border.lastItem?.representedObject = width
+        }
+        let currentWidth = annotation.border?.lineWidth ?? 0
+        border.selectItem(at: ReaderLibrary.textBoxBorderWidths.firstIndex { abs($0 - currentWidth) < 0.01 } ?? 0)
+        border.target = self
+        border.action = #selector(pickBorder(_:))
+        border.setAccessibilityLabel(L("Border"))
+
+        func label(_ text: String) -> NSTextField {
+            let field = NSTextField(labelWithString: text)
+            field.font = .systemFont(ofSize: 12)
+            field.textColor = .secondaryLabelColor
+            field.setContentCompressionResistancePriority(.required, for: .horizontal)
+            return field
+        }
+        background.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+        let row = NSStackView(views: [label(L("Background")), background, label(L("Border")), border])
+        row.orientation = .horizontal
+        row.spacing = 6
+        row.edgeInsets = NSEdgeInsets(top: 8, left: 12, bottom: 8, right: 12)
+        return row
+    }
+
+    @objc private func pickBackground(_ sender: NSPopUpButton) {
+        let hex = sender.selectedItem?.representedObject as? String
+        library?.setBackground(of: annotation, to: MarkupColor.backgroundCases.first { $0.hex == hex })
+    }
+
+    @objc private func pickBorder(_ sender: NSPopUpButton) {
+        guard let width = sender.selectedItem?.representedObject as? CGFloat else { return }
+        library?.setBorderWidth(of: annotation, to: width)
     }
 
     /// Line width for drawings and shapes; font family and size for text boxes.
