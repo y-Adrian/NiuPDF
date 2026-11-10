@@ -1,0 +1,102 @@
+%PDF-1.7
+%‚„œ”
+1 0 obj
+<< /Type /Catalog /Pages 2 0 R /AcroForm 6 0 R >>
+endobj
+2 0 obj
+<< /Type /Pages /Kids [3 0 R] /Count 1 >>
+endobj
+3 0 obj
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Contents 4 0 R /Resources << /Font << /F1 5 0 R >> >> /Annots [10 0 R 11 0 R 12 0 R 14 0 R 15 0 R 16 0 R 17 0 R 18 0 R] >>
+endobj
+4 0 obj
+<< /Length 259 >>
+stream
+BT /F1 12 Tf 1 0 0 1 60 706 Tm (Name:) Tj 1 0 0 1 60 646 Tm (Notes:) Tj 1 0 0 1 60 566 Tm (I agree) Tj 1 0 0 1 60 526 Tm (Color:) Tj 1 0 0 1 60 476 Tm (Country:) Tj 1 0 0 1 60 406 Tm (Fruit:) Tj 1 0 0 1 60 336 Tm (Read-only:) Tj ET 0.6 G 140 700 m 140 700 l S
+endstream
+endobj
+5 0 obj
+<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica /Encoding /WinAnsiEncoding >>
+endobj
+6 0 obj
+<< /Fields [10 0 R 11 0 R 12 0 R 13 0 R 16 0 R 17 0 R 18 0 R] /NeedAppearances true /DA (/Helv 0 Tf 0 g) /DR << /Font << /Helv 5 0 R /ZaDb 21 0 R >> >> >>
+endobj
+10 0 obj
+<< /Type /Annot /Subtype /Widget /Rect [140 695 400 717] /P 3 0 R /F 4 /MK << /BC [0.4 0.4 0.4] /BG [0.95 0.95 1] >> /FT /Tx /T (name) /DA (/Helv 12 Tf 0 g) /V () >>
+endobj
+11 0 obj
+<< /Type /Annot /Subtype /Widget /Rect [140 600 400 660] /P 3 0 R /F 4 /MK << /BC [0.4 0.4 0.4] /BG [0.95 0.95 1] >> /FT /Tx /T (notes) /Ff 4096 /DA (/Helv 10 Tf 0 g) /V () >>
+endobj
+12 0 obj
+<< /Type /Annot /Subtype /Widget /Rect [140 556 158 574] /P 3 0 R /F 4 /MK << /BC [0.4 0.4 0.4] /BG [0.95 0.95 1] >> /FT /Btn /T (agree) /V /Off /AS /Off /AP << /N << /Yes 20 0 R /Off 22 0 R >> >> >>
+endobj
+13 0 obj
+<< /FT /Btn /T (color) /Ff 49152 /V /Off /Kids [14 0 R 15 0 R] >>
+endobj
+14 0 obj
+<< /Type /Annot /Subtype /Widget /Parent 13 0 R /Rect [140 516 158 534] /P 3 0 R /F 4 /AS /Off /MK << /BC [0.4 0.4 0.4] >> /AP << /N << /Red 23 0 R /Off 22 0 R >> >> >>
+endobj
+15 0 obj
+<< /Type /Annot /Subtype /Widget /Parent 13 0 R /Rect [200 516 218 534] /P 3 0 R /F 4 /AS /Off /MK << /BC [0.4 0.4 0.4] >> /AP << /N << /Blue 23 0 R /Off 22 0 R >> >> >>
+endobj
+16 0 obj
+<< /Type /Annot /Subtype /Widget /Rect [140 465 300 487] /P 3 0 R /F 4 /MK << /BC [0.4 0.4 0.4] /BG [0.95 0.95 1] >> /FT /Ch /T (country) /Ff 131072 /Opt [(China) (Japan) (France)] /DA (/Helv 12 Tf 0 g) /V (Japan) >>
+endobj
+17 0 obj
+<< /Type /Annot /Subtype /Widget /Rect [140 360 300 420] /P 3 0 R /F 4 /MK << /BC [0.4 0.4 0.4] /BG [0.95 0.95 1] >> /FT /Ch /T (fruit) /Opt [(Apple) (Banana) (Cherry) (Durian)] /DA (/Helv 12 Tf 0 g) >>
+endobj
+18 0 obj
+<< /Type /Annot /Subtype /Widget /Rect [140 325 340 347] /P 3 0 R /F 4 /MK << /BC [0.4 0.4 0.4] /BG [0.95 0.95 1] >> /FT /Tx /T (fixed) /Ff 1 /DA (/Helv 12 Tf 0 g) /V (Cannot change) >>
+endobj
+20 0 obj
+<< /Type /XObject /Subtype /Form /BBox [0 0 18 18] /Resources << /Font << /ZaDb 21 0 R >> >> /Length 39 >>
+stream
+q 0 g BT /ZaDb 12 Tf 3 4 Td (4) Tj ET Q
+endstream
+endobj
+21 0 obj
+<< /Type /Font /Subtype /Type1 /BaseFont /ZapfDingbats >>
+endobj
+22 0 obj
+<< /Type /XObject /Subtype /Form /BBox [0 0 18 18] /Length 0 >>
+stream
+
+endstream
+endobj
+23 0 obj
+<< /Type /XObject /Subtype /Form /BBox [0 0 18 18] /Resources << /Font << /ZaDb 21 0 R >> >> /Length 39 >>
+stream
+q 0 g BT /ZaDb 10 Tf 4 4 Td (l) Tj ET Q
+endstream
+endobj
+xref
+0 24
+0000000000 65535 f 
+0000000015 00000 n 
+0000000080 00000 n 
+0000000137 00000 n 
+0000000329 00000 n 
+0000000639 00000 n 
+0000000736 00000 n 
+0000000000 65535 f 
+0000000000 65535 f 
+0000000000 65535 f 
+0000000906 00000 n 
+0000001088 00000 n 
+0000001280 00000 n 
+0000001496 00000 n 
+0000001578 00000 n 
+0000001763 00000 n 
+0000001949 00000 n 
+0000002182 00000 n 
+0000002401 00000 n 
+0000000000 65535 f 
+0000002603 00000 n 
+0000002783 00000 n 
+0000002857 00000 n 
+0000002955 00000 n 
+trailer
+<< /Size 24 /Root 1 0 R >>
+startxref
+3135
+%%EOF

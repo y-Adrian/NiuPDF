@@ -199,6 +199,7 @@ private final class MarkupPDFView: PDFView, AnnotationOverlayHost {
     weak var readerLibrary: ReaderLibrary?
     let overlayProvider = AnnotationOverlayProvider()
     private var contextMenuSelection: PDFSelection?
+    private var contextMenuLink: PDFAnnotation?
     private var editorPopover: NSPopover?
     private var pendingMarkupClick: PDFAnnotation?
     /// Set while a markup tool waits for the text selection a drag produces.
@@ -225,8 +226,13 @@ private final class MarkupPDFView: PDFView, AnnotationOverlayHost {
     /// or in `mouseUp`, whichever comes.
     override func mouseDown(with event: NSEvent) {
         selectionToolbar.hide()
-        // A file that forbids annotations only selects text.
+        // A file that forbids annotations only selects text, and its form
+        // fields stay as they are (PDFKit would let them be filled in).
         let canAnnotate = readerLibrary?.canAnnotate ?? false
+        if !canAnnotate, formField(at: event) != nil {
+            NSSound.beep()
+            return
+        }
         if canAnnotate, toolHandler.mouseDown(event) { return }
         let tool = readerLibrary?.activeTool ?? .select
         pendingMarkupClick = canAnnotate && tool == .select && event.clickCount == 1 ? markup(at: event) : nil
@@ -241,6 +247,13 @@ private final class MarkupPDFView: PDFView, AnnotationOverlayHost {
                 if self?.mouseUpAlreadyHandled() == true { self?.resolveClick() }
             }
         }
+    }
+
+    private func formField(at event: NSEvent) -> PDFAnnotation? {
+        let viewPoint = convert(event.locationInWindow, from: nil)
+        guard let page = page(for: viewPoint, nearest: false) else { return nil }
+        let point = convert(viewPoint, to: page)
+        return page.annotations.last { $0.type == "Widget" && $0.bounds.contains(point) }
     }
 
     /// True when PDFView tracked the whole drag inside `mouseDown`: the button is
@@ -403,6 +416,7 @@ private final class MarkupPDFView: PDFView, AnnotationOverlayHost {
 
     override func menu(for event: NSEvent) -> NSMenu? {
         selectionToolbar.hide()
+        contextMenuLink = readerLibrary?.canAnnotate == true ? linkUnder(event) : nil
         guard readerLibrary?.canAnnotate == true, let selection = selectionForContextMenu(at: event),
               !(selection.string ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
         else {
@@ -411,7 +425,10 @@ private final class MarkupPDFView: PDFView, AnnotationOverlayHost {
             // where the file forbids annotations; they would edit the document
             // around this app's undo, saving and restrictions.
             let menu = super.menu(for: event)
-            if let menu { removeNativeAnnotationItems(from: menu) }
+            if let menu {
+                removeNativeAnnotationItems(from: menu)
+                insertLinkItems(into: menu)
+            }
             return menu
         }
 
@@ -428,10 +445,46 @@ private final class MarkupPDFView: PDFView, AnnotationOverlayHost {
         } else {
             editingItems.append(actionItem(L("Add Note"), action: #selector(addNote)))
         }
+        if contextMenuLink == nil {
+            editingItems.append(actionItem(L("Add Link…"), action: #selector(addLink)))
+        }
         editingItems.append(.separator())
 
         for item in editingItems.reversed() { menu.insertItem(item, at: 0) }
+        insertLinkItems(into: menu)
         return menu
+    }
+
+    private func linkUnder(_ event: NSEvent) -> PDFAnnotation? {
+        let viewPoint = convert(event.locationInWindow, from: nil)
+        guard let page = page(for: viewPoint, nearest: false) else { return nil }
+        return readerLibrary?.link(at: convert(viewPoint, to: page), on: page)
+    }
+
+    /// Edit and Remove for the link under the pointer, at the top of the menu.
+    private func insertLinkItems(into menu: NSMenu) {
+        guard contextMenuLink != nil else { return }
+        let items = [actionItem(L("Edit Link…"), action: #selector(editLink)),
+                     actionItem(L("Remove Link"), action: #selector(removeLink)),
+                     NSMenuItem.separator()]
+        for item in items.reversed() { menu.insertItem(item, at: 0) }
+    }
+
+    @objc private func addLink() {
+        guard let contextMenuSelection, let readerLibrary,
+              let target = readerLibrary.askForLinkTarget() else { return }
+        readerLibrary.addLink(over: contextMenuSelection, to: target)
+    }
+
+    @objc private func editLink() {
+        guard let link = contextMenuLink, let readerLibrary,
+              let target = readerLibrary.askForLinkTarget(current: LinkTarget(link)) else { return }
+        readerLibrary.changeLink(link, to: target)
+    }
+
+    @objc private func removeLink() {
+        guard let link = contextMenuLink else { return }
+        readerLibrary?.removeLink(link)
     }
 
 
@@ -1050,7 +1103,7 @@ private enum ThumbnailCache {
 
     static func image(for page: PDFPage, revision: Int) -> NSImage {
         if let entry = images.object(forKey: page), entry.revision == revision { return entry.image }
-        let image = page.thumbnail(of: CGSize(width: 150, height: 190), for: .mediaBox)
+        let image = PageMark.thumbnail(of: page, size: CGSize(width: 150, height: 190), for: .mediaBox)
         images.setObject(Entry(image: image, revision: revision), forKey: page)
         return image
     }

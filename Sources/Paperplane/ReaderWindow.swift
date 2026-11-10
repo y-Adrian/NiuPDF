@@ -72,6 +72,22 @@ struct ReaderWindow: View {
         .background(Color(nsColor: .windowBackgroundColor))
         .onChange(of: library.currentPageIndex) { value in pageInput = "\(value + 1)" }
         .onDrop(of: [UTType.fileURL], isTargeted: $isDropTargeted, perform: handleDrop)
+        .background(EmptyView().sheet(isPresented: $library.isAddingSignature) {
+            SignatureSheet().environmentObject(library)
+        })
+        .background(EmptyView().sheet(item: $library.pageSheet) { sheet in
+            Group {
+                switch sheet {
+                case .crop: CropSheet()
+                case .split: SplitSheet()
+                case .watermark: WatermarkSheet()
+                case .headerFooter: HeaderFooterSheet()
+                case .recognizeText: TextRecognitionSheet()
+                case .progress: PageProgressSheet()
+                }
+            }
+            .environmentObject(library)
+        })
         .sheet(isPresented: $library.isEditingPassword) {
             PasswordSheet(current: library.readerRestrictions, isChange: library.isPasswordProtected)
                 .environmentObject(library)
@@ -439,6 +455,7 @@ private struct AnnotationToolBar: View {
             HStack(spacing: 2) {
                 shapeMenu
                 toolButton(.note)
+                toolButton(.redact)
             }
             Divider().frame(height: 20)
             colorRow
@@ -496,7 +513,8 @@ private struct AnnotationToolBar: View {
     /// keeps its place.
     private var colorRow: some View {
         let tool = library.activeTool
-        let hasColor = tool != .select && tool != .note
+        // Redaction marks have one look.
+        let hasColor = tool != .select && tool != .note && tool != .redact
         let palette = hasColor ? tool.colorChoices : MarkupColor.allCases
         let current = library.color(for: hasColor ? tool : .highlight)
         return HStack(spacing: 6) {
@@ -709,6 +727,8 @@ private struct ExportBar: View {
             } else {
                 pdfCopyControls
                 Divider().frame(height: 20)
+                textControls
+                Divider().frame(height: 20)
                 imageControls
             }
             if let status = library.exportStatus {
@@ -738,7 +758,29 @@ private struct ExportBar: View {
             .labelsHidden()
             .fixedSize()
             .help(L("Flattened annotations become part of the page and can no longer be edited."))
+            Toggle(L("Reduce File Size"), isOn: $library.exportReducesFileSize)
+                .toggleStyle(.checkbox)
+                .help(L("Recompresses and downsamples images, as Preview’s Reduce File Size does. Text and annotations are kept."))
             Button(L("Export…")) { library.exportPDFCopy() }
+                .buttonStyle(.bordered)
+        }
+    }
+
+    private var textControls: some View {
+        HStack(spacing: 8) {
+            Label(L("Text"), systemImage: "doc.plaintext")
+                .foregroundStyle(.secondary)
+            // A menu, not segments: the row also has to fit PDF copy and images.
+            Picker(L("Format"), selection: $library.textExportFormat) {
+                Text(verbatim: "TXT").tag(TextExportFormat.plainText)
+                Text(verbatim: "RTF").tag(TextExportFormat.richText)
+                Text(verbatim: "Word").tag(TextExportFormat.word)
+            }
+            .pickerStyle(.menu)
+            .labelsHidden()
+            .fixedSize()
+            .help(L("The text of all pages, with fonts and sizes in RTF and Word. The page layout isn’t kept."))
+            Button(L("Export…")) { library.exportText() }
                 .buttonStyle(.bordered)
         }
     }
@@ -757,7 +799,7 @@ private struct ExportBar: View {
             Picker(L("Pages"), selection: $library.imageExportRange) {
                 ForEach(ImageExportRange.allCases) { Text($0.title).tag($0) }
             }
-            .pickerStyle(.segmented)
+            .pickerStyle(.menu)
             .labelsHidden()
             .fixedSize()
             if library.imageExportRange == .custom {

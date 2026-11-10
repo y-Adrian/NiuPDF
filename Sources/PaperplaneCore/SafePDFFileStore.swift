@@ -92,7 +92,8 @@ public enum SafePDFFileStore {
         _ document: PDFDocument,
         to url: URL,
         expectedRevision: PDFFileRevision,
-        writeOptions: [PDFDocumentWriteOption: Any]? = nil
+        writeOptions: [PDFDocumentWriteOption: Any]? = nil,
+        repairingButtons buttons: [ButtonWidgetState] = []
     ) throws -> PDFFileRevision {
         var updatedRevision: PDFFileRevision?
         var operationError: Error?
@@ -116,6 +117,7 @@ public enum SafePDFFileStore {
                 guard replacesAtomically || write(document, to: candidate, options: writeOptions) else {
                     throw SafePDFFileStoreError.unableToWriteTemporary
                 }
+                try ButtonFieldRepair.repairFile(at: candidate, buttons: buttons)
                 guard let reopened = PDFDocument(url: candidate),
                       reopened.pageCount == document.pageCount else {
                     throw SafePDFFileStoreError.invalidTemporaryCopy

@@ -2,20 +2,16 @@
 
 新会话先读本文，再按需查 [DEVELOPMENT_LOG.md](DEVELOPMENT_LOG.md)（每阶段的决策、根因与验证）和 [ROADMAP.md](ROADMAP.md)。需求见 [产品需求文档.md](产品需求文档.md)。
 
-## 当前状态（2026-11-10，分支 `leading`，最新提交 `d54b215`（S-01），翻译与朗读已完成待提交，未推送）
+## 当前状态（2026-11-11，分支 `leading`；阶段 3G-1 至 3G-5、3H-1 至 3H-4 已合并为一次提交，未推送）
 
-已完成：阅读与搜索（含正则/全词）、标准批注（高亮/下划线/波浪线/删除线/笔记/文本框/手绘/形状，可调颜色、粗细、字体；选中文字后的浮动标注工具条；不透明度与常用样式；文本框背景与边框）、批注编辑（选择、缩放、移动、复制粘贴、批量删除）、页面管理（旋转、删除、插入、移动、提取）、用户书签（⌘B，存于应用、按文件）、批注列表按类型/颜色/作者筛选、加密文档密码可记在钥匙串（设置中可忘记）、设置/更改/移除打开密码与权限限制（受限文件只读并有提示条）、所选文字的系统翻译浮层与朗读、合并文档（合并窗口：排序、页码范围、逐页预览）、导出（PDF 副本/扁平化、图片）、多标签页与多窗口、开始页与最近文件、自动存储、中英文界面与设置（⌘,）、打印、常用快捷键。Debug/Release、签名/未签名构建均 0 警告；9 项核心测试通过。
+已完成：阅读与搜索（含正则/全词）、标准批注（高亮/下划线/波浪线/删除线/笔记/文本框/手绘/形状，可调颜色、粗细、字体；选中文字后的浮动标注工具条；不透明度与常用样式；文本框背景与边框）、批注编辑（选择、缩放、移动、复制粘贴、批量删除）、页面管理（旋转、删除、插入、移动、提取）、用户书签（⌘B，存于应用、按文件）、批注列表按类型/颜色/作者筛选、加密文档密码可记在钥匙串（设置中可忘记）、设置/更改/移除打开密码与权限限制（受限文件只读并有提示条）、所选文字的系统翻译浮层与朗读、导出时减小文件大小、裁切页面、拆分文档、幻灯片放映、插入图片、网址链接、签名（手写/键入/图片，可存储复用）、水印、页眉页脚与页码、表单填写（存储时修复 PDFKit 写坏的单选组）、导出文字（TXT/RTF/Word）、图片转 PDF（合并窗口）、识别文字（Vision，加不可见文字层）、涂黑（标记后应用，页面重画为图像）、合并文档（合并窗口：排序、页码范围、逐页预览）、导出（PDF 副本/扁平化、图片）、多标签页与多窗口、开始页与最近文件、自动存储、中英文界面与设置（⌘,）、打印、常用快捷键。Debug/Release、签名/未签名构建均 0 警告；36 项核心测试通过。
 
 ## 下一步候选（按优先级）
 
-1. 用户提出的后续功能与 PDFgear 差距（2026-11-11 调研 pdfgear.com 的 Mac 产品页与用户指南首页；PDFgear 没提到而本应用已有：密码与权限、朗读、本地翻译、书签）。建议顺序：
-   - 快速补齐（PDFKit 原生可做）：压缩（`saveImagesAsJPEGOption`/`optimizeImagesForScreenOption`，macOS 13.4+）、裁切页面与拆分文档、幻灯片（全屏演示）模式、添加链接、插入图片、签名（手写/键入/图片）、水印与页眉页脚页码。
-   - 中等：表单填写与存储、OCR（先试 `saveTextFromOCROption`，不行用 Vision）、涂黑（真正删除需栅格化所在页）、PDF 转文本/RTF、图片转 PDF、批量处理。
-   - 困难：修改原有文字（PDFKit 不能改内容流，需另引 PDF 库或“遮盖 + 新文字”的折中）、PDF 转 Office、创建表单、证书签名、AI 摘要问答（PDFgear 走云端；本地可考虑系统的端侧模型）。
-   - 页面旋转、插入、删除、提取、排序、合并已有。
-2. U-04 补全：双指旋转手势（P0）。代码里没有 `rotate(with:)` 处理，双指缩放与智能缩放由 PDFView 自带；可做成旋转到 ±90° 时旋转当前页（走 `rotatePages`，可撤销）。动手前先在真机确认 PDFView 是否已有内置行为。
-3. P1：OCR、表单填写与签名、压缩、夜间模式、分屏、链接、标注摘要导出。
-4. 需要用户确认的项（见 DEVELOPMENT_LOG 阶段 3F-4 最后一项）：合并窗口的拖动排序与从访达拖入、沙盒下合并后的存储面板、用户那份文档上的波浪线、各项手感。其余交互已用事件注入探针验证。不必等它们再开工。
+1. PDFgear 差距第 2 组（表单 3H-1、转文本与图片转 PDF 3H-2、OCR 3H-3、涂黑 3H-4 已完成）：剩批量处理（建议：对多个文件依次执行压缩、加水印/页眉页脚、识别文字、转图片/文字，复用现有 Core 函数，不打开窗口）；涂黑的“搜索并涂黑全部”。
+2. 第 3 组（困难）：修改原有文字（PDFKit 不能改内容流）、PDF 转 Office、创建表单、证书签名、本地 AI 摘要；页内链接（需修复 PDFKit 写坏页面引用的问题，见下方坑）。
+3. U-04 补全：双指旋转手势（P0）；幻灯片的触控板手势翻页。
+4. 需要用户确认的项：见 DEVELOPMENT_LOG 各阶段未勾选项（3F-4 起），主要是拖动、手感、沙盒中的文件夹与面板、在其他应用中的显示。
 
 ## 项目约定
 
@@ -49,6 +45,16 @@
 - 钥匙串：用登录钥匙串的通用密码项（`PasswordKeychain`），沙盒内可用；数据保护钥匙串需要团队 ID，临时签名用不了。项的访问控制绑定创建它的构建：工程未设团队，Xcode 构建为临时签名，重新构建后读取旧项会弹系统授权框（已验证）；`SecItemUpdate` 不会改访问控制，所以存储一律先删后建。
 - 加密：PDFKit 只写 128 位 RC4；没有所有者密码就不加密（只设打开密码时两者取同值）；以受限身份解锁时存储会静默丢掉新批注，所以受限文件在界面上只读（`canAnnotate`/`canChangePages`/`canPrint`/`canCopy`，见 `DocumentSecurity.swift`；修改已有批注的方法也都检查 `canAnnotate`），存储也有兜底。设置限制后窗口以读者身份重新打开，立即受限。PDFKit 的默认右键菜单在已有标注上带自己的标注项，返回前一律用 `removeNativeAnnotationItems` 去掉。移除密码用空密码写出（`PDFPasswordSettings.removalOptions`）。
 - 翻译用 `translationPresentation`（macOS 14.4+，弱链接），浮层由系统进程绘制，截图截不到内容。朗读的语句状态按当前 `AVSpeechUtterance` 跟踪。
+- 压缩：PDFKit 的 `saveImagesAsJPEGOption`/`optimizeImagesForScreenOption` 不起作用，用系统“Reduce File Size” Quartz 滤镜（写入选项 `QuartzFilter`，沙盒中可用）。
+- 图片、签名用 `ImageStamp`（自绘图章，存储时写入外观流）；重新打开后是普通图章，可移动缩放但不可复制（复制由字典重建，没有外观流）。
+- 自绘批注（`PDFAnnotation` 子类覆写 `draw`）：`PDFPage.copy()` 用 `copy(with:)` 复制、不走初始化方法，必须覆写 `copy(with:)`；扁平化（`burnInAnnotationsOption`）会画成叉框，须先写出再读回后扁平化（`DocumentExporter` 已处理）；`beginTransparencyLayer` 写出后其他阅读器找不到表单对象，不要用；`PDFPage.thumbnail` 不管 `shouldDisplay` 都画批注，且在旋转页上方向错误（应用中，单元测试进程中不会），`page.draw(with:to:)` 则不画隐藏的批注。
+- 表单：PDFKit 自己编辑域并登记撤销，改值发 `PDFFormDidChangeValue`（对象为文稿）；改过的复选/单选按钮被 PDFKit 写坏（导出名变 “Yes”，单选组重开后同名），存储与导出副本后由 `ButtonFieldRepair` 追加增量更新修复（加密文件除外）。受限文件中点表单域被拦截。
+- PDFKit 实时 OCR：应用中 `PDFView` 显示过或搜索过的纯图片页面，PDFKit 会自动识别并把文字注入该页（`string`、`pageRef` 内容流），存储时可能写出也可能不写；`saveTextFromOCROption` 只对这些页面有效。判断“页面是否真有文字”要用写出再读回的副本（`TextRecognizer.hasText` 扫描内容流）。
+- `replacePages`（`PageOperations.swift`）用新页面替换旧页面并移交批注对象（`leaving` 中的留在旧页），撤销时移回；识别文字与涂黑用它。替换后 `cacheDisplay` 截图仍显示旧页面内容，验证用像素渲染或写出的文件。
+- `PDFPage(image:options:)` 只要传入选项（即使为空）就按像素定页面尺寸、忽略图片分辨率；要原尺寸用不带选项的 `PDFPage(image:)`。
+- 水印、页眉页脚是 `PageMark`（`PageMarks.swift`），设置以 JSON 存在 `/PaperplaneWatermark`、`/PaperplaneHeaderFooter` 中；打开时文字类重建为可更新的对象，屏幕上由覆盖层绘制；页面变化后 `refreshPageMarks` 重新编号与布置。几何在 Core 的 `PageMarkLayout`。
+- `CGRect` 的 width/height 总是非负，判断“剩余是否足够”要先算差值再建矩形（裁切曾因此出错）。
+- PDFKit 对从文件打开的文稿新建页内链接/目录项时，把目标页写成占位名称（`/#2323<页码>`），存储后失效；已有链接重新存储正常。
 - PDFKit 写出含文本框的文件时，外观流里嵌入字体的数据流缺 `/Length`（与字体无关），Ghostscript 能自动修复。
 - `PDFView` 未公开 `validateMenuItem`，需通过运行时调用其实现。
 - 沙盒应用打印需要 `com.apple.security.print`；沙盒只授权所选文件而非其文件夹。
@@ -72,8 +78,8 @@ log show --last 10m --info --predicate 'subsystem == "app.paperplane.reader" AND
 3. 构建：`xcodebuild -project Paperplane.xcodeproj -scheme Paperplane build CODE_SIGN_IDENTITY="-" CODE_SIGN_STYLE=Manual DEVELOPMENT_TEAM="" CODE_SIGN_ENTITLEMENTS=<空 plist> ENABLE_APP_SANDBOX=NO PRODUCT_BUNDLE_IDENTIFIER=app.paperplane.probe -derivedDataPath <临时目录>`。必须同时关 `ENABLE_APP_SANDBOX`（只换 entitlements 不够），否则读不了临时目录的测试文件；独立 bundle ID 避免污染用户正式应用的 UserDefaults（常用样式、书签等）。
 3a. 只验证沙盒内的行为（如钥匙串）时，可不传 `CODE_SIGN_ENTITLEMENTS`/`ENABLE_APP_SANDBOX`，用正式 entitlements 构建另一个 bundle ID，探针不读临时目录里的文件。
 4. 直接运行可执行文件（不要用 `open`，用户可能正从 Xcode 运行着正式应用）：`PP_DIR=… …/Paperplane.app/Contents/MacOS/Paperplane -NSQuitAlwaysKeepsWindows NO -ApplePersistenceIgnoreState YES -AppleLanguages "(zh-Hans)" > log 2>&1 &`，用带超时的循环等待并 `grep PPDEBUG`（管道里的 grep 会缓冲，进程挂起时看不到输出，所以先写文件）。
-5. 注意：撤销要 `groupsByEvent = false` 并给每步手动开关分组，否则抛 “must begin a group”；嵌套函数要标 `@MainActor`；`hasUnsavedChanges` 等只读属性不能在探针里改；窗口打开后当前页可能不是第 1 页（粘贴等会落到当前页）；整页逐像素用 `colorAt` 太慢，用 `bitmapData` 并只扫描相关区域。
-6. 截图（浮层为半透明材质，`cacheDisplay` 截不到其中的主色文字，先给内容视图设不透明的 `layer.backgroundColor` 再截）：`contentView.bitmapImageRepForCachingDisplay` + `cacheDisplay` 写 PNG 后用 Read 查看；子窗口（浮动工具条）从 `window.childWindows` 取；视觉材质在截图中呈灰底属正常。
+5. 注意：撤销要 `groupsByEvent = false` 并给每步手动开关分组，否则抛 “must begin a group”（在探针 Task 里这个异常被静默吞掉，表现为探针停在那一步、主线程空闲）；嵌套函数要标 `@MainActor`；`hasUnsavedChanges` 等只读属性不能在探针里改；窗口打开后当前页可能不是第 1 页（粘贴等会落到当前页）；整页逐像素用 `colorAt` 太慢，用 `bitmapData` 并只扫描相关区域。
+6. 截图只能截到 SwiftUI 界面与页面覆盖层，截不到 PDFKit 自己绘制的批注（`cacheDisplay` 与 `CALayer.render` 都截不到，系统 `screencapture -l` 无权限）；批注外观用缩略图、`page.draw` 或 Ghostscript 验证。截图（浮层为半透明材质，`cacheDisplay` 截不到其中的主色文字，先给内容视图设不透明的 `layer.backgroundColor` 再截）：`contentView.bitmapImageRepForCachingDisplay` + `cacheDisplay` 写 PNG 后用 Read 查看；子窗口（浮动工具条）从 `window.childWindows` 取；视觉材质在截图中呈灰底属正常。
 
 ### 事件注入探针：验证真实交互（阶段 3F-4 起）
 
@@ -84,6 +90,7 @@ log show --last 10m --info --predicate 'subsystem == "app.paperplane.reader" AND
 - SwiftUI 只在有辅助功能客户端时生成辅助功能树，进程内查不到控件；在探针副本里给控件加 `.probeFrame("id")`（不接受点击的背景 NSView）取窗口坐标。
 - 探针任务运行在主队列上，NSAlert 模态循环里不会再执行 GCD 主队列块；要在弹窗期间操作，用同时加入 `.common` 与 `.modalPanel` 模式的 `Timer`。
 - 安全输入框只接受第一个合成按键；密码直接设 `stringValue`，再用鼠标点按钮。
+- 撤销测试：应用失去激活时不处理事件，按事件分组的撤销组不会关闭，几步操作会被合成一步；探针里用 `groupsByEvent = false` 并手动开关分组。探针应用失去激活时拖动类测试（移动批注）无法进行。
 - 需要应答 NSAlert 时，更简单的做法是在探针副本里把 `alert.runModal()` 替换成一个按脚本应答的函数（阶段 3F-5 的 `ProbeModal`）。
 - 编辑气泡（`_NSPopoverWindow`）也是窗口的子面板，找浮动工具条时要排除它。
 - `pkill -f`/`pgrep -f` 的模式会匹配到执行它的 shell，写成 `"[u]i/dd/Build/Products"`。
@@ -106,7 +113,7 @@ for target in ["Paperplane","PaperplaneCore"]:
         print(target, lang, "missing:", sorted(code-t), "extra:", sorted(t-code))
 ```
 
-新增工程文件的 ID 已用到 `…049`（`ReadingTools.swift`），下一个从 `100000000000000000000050` / `200000000000000000000050` 开始。Core 文件登记在 Core Sources 构建阶段。
+新增工程文件的 ID 已用到 `…064`（Core `PageTools.swift` 050、`PageToolSheets.swift` 051、`Slideshow.swift` 052、`InsertTools.swift` 053、`Signatures.swift` 054、Core `PageMarkLayout.swift` 055、`PageMarks.swift` 056、`PageMarkSheets.swift` 057、Core `ButtonFieldRepair.swift` 058、`FormFields.swift` 059、Core `DocumentConverter.swift` 060、Core `TextRecognition.swift` 061、`TextRecognitionSheet.swift` 062、Core `Redaction.swift` 063、`Redactions.swift` 064），下一个从 `100000000000000000000065` / `200000000000000000000065` 开始（共 24 位，注意别多写一个 0）。Core 文件登记在 Core Sources 构建阶段。
 
 ### 旧做法：手工编译源码
 

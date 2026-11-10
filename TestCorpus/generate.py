@@ -17,6 +17,8 @@ from reportlab.pdfbase import pdfmetrics
 from reportlab.pdfbase.cidfonts import UnicodeCIDFont
 from reportlab.pdfgen import canvas
 
+import make_acroform
+
 
 ROOT = Path(__file__).resolve().parent
 FIXTURES = ROOT / "fixtures"
@@ -168,6 +170,7 @@ def main() -> None:
         "existing-annotation.pdf": make_annotated_document,
         "markup-regression.pdf": make_markup_regression_document,
         "malformed-xref.pdf": make_malformed_document,
+        "acroform-fields.pdf": make_acroform.write,
     }
     for name, maker in makers.items():
         maker(FIXTURES / name)
@@ -180,6 +183,7 @@ def main() -> None:
         "existing-annotation.pdf": {"type": "existing-annotations", "pages": 1, "notes": "Contains one standard PDF Highlight annotation."},
         "markup-regression.pdf": {"type": "markup-regression", "pages": 1, "notes": "Synthetic selectable text plus an existing highlight, underline, and independent note; used to verify color changes, selection retention while the custom color panel is open, and non-destructive toggles."},
         "malformed-xref.pdf": {"type": "malformed-pdf", "pages": None, "notes": "Intentionally truncated invalid PDF; parser should fail safely."},
+        "acroform-fields.pdf": {"type": "form-fields", "pages": 1, "notes": "Hand-written AcroForm (make_acroform.py): text, multi-line, check box, radio group Red/Blue, combo, list and read-only fields."},
     }
     manifest = {
         "generated_by": "TestCorpus/generate.py",

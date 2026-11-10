@@ -12,6 +12,7 @@ enum AnnotationListKind: String, CaseIterable, Identifiable {
     case textBox
     case drawing
     case shape
+    case image
     case stamp
 
     var id: String { rawValue }
@@ -26,6 +27,7 @@ enum AnnotationListKind: String, CaseIterable, Identifiable {
         case .textBox: L("Text Box")
         case .drawing: L("Drawing")
         case .shape: L("Shapes")
+        case .image: L("Image")
         case .stamp: L("Stamp")
         }
     }
@@ -40,12 +42,16 @@ enum AnnotationListKind: String, CaseIterable, Identifiable {
         case .textBox: AnnotationTool.textBox.symbol
         case .drawing: AnnotationTool.ink.symbol
         case .shape: "square.on.circle"
+        case .image: "photo"
         case .stamp: "seal"
         }
     }
 
     /// The listed kind of `annotation`; nil for links, widgets, popups and others the list skips.
     static func of(_ annotation: PDFAnnotation) -> AnnotationListKind? {
+        // Watermarks and headers are changed as a whole, from their sheets.
+        if PageMark.isPageMark(annotation) { return nil }
+        if ImageStamp.isImage(annotation) { return .image }
         if let tool = MarkupEngine.tool(of: annotation) {
             switch tool {
             case .highlight: return .highlight

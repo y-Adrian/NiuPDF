@@ -106,6 +106,10 @@ struct ReaderCommands: Commands {
             }
             Divider()
             Button(L("Merge PDFs…")) { openMergeWindow() }
+            Button(L("New PDF from Images…")) {
+                MergeModel.shared.presentImagePanel()
+                if !MergeModel.shared.items.isEmpty { openWindow(id: "merge") }
+            }
         }
         // Replacing the save group also drops the default Close, so it is added here.
         CommandGroup(replacing: .saveItem) {
@@ -189,6 +193,10 @@ struct ReaderCommands: Commands {
             Button(ReaderLayout.twoPageBook.title) { library?.layoutMode = .twoPageBook }
                 .keyboardShortcut("4", modifiers: [.command, .control])
             Divider()
+            Button(L("Start Slideshow")) { documentLibrary.map(Slideshow.start(for:)) }
+                .keyboardShortcut("p", modifiers: [.command, .option])
+                .disabled(knownEmpty)
+            Divider()
         }
         CommandMenu(L("Go")) {
             Button(L("Previous Page")) { library?.stepPage(-1) }
@@ -221,6 +229,20 @@ struct ReaderCommands: Commands {
             Button(L("Rotate Right")) { documentLibrary?.rotatePages(by: 90) }
                 .keyboardShortcut("r", modifiers: .command)
                 .disabled(knownEmpty)
+            Button(L("Crop Pages…")) { documentLibrary?.pageSheet = .crop }
+                .disabled(knownEmpty)
+            Button(L("Recognize Text…")) {
+                // The pages are replaced, which a restricted file does not allow.
+                if documentLibrary?.canChangePages == true { documentLibrary?.pageSheet = .recognizeText }
+            }
+                .disabled(knownEmpty)
+            Divider()
+            Button(L("Watermark…")) { documentLibrary?.showPageSheet(.watermark) }
+                .disabled(knownEmpty)
+            Button(L("Header & Footer…")) { documentLibrary?.showPageSheet(.headerFooter) }
+                .disabled(knownEmpty)
+            Button(L("Page Numbers…")) { documentLibrary?.showPageSheet(.headerFooter) }
+                .disabled(knownEmpty)
             Divider()
             Button(L("Insert Blank Page")) { documentLibrary?.insertBlankPage() }
                 .disabled(knownEmpty)
@@ -229,6 +251,8 @@ struct ReaderCommands: Commands {
                 .disabled(knownEmpty)
             Button(L("Extract Pages…")) { documentLibrary?.extractPages() }
                 .disabled(knownEmpty)
+            Button(L("Split Document…")) { documentLibrary?.pageSheet = .split }
+                .disabled(knownEmpty || focusedLibrary.map { $0.document != nil && !$0.canCopy } ?? false)
             Divider()
             // No shortcut: menu key equivalents win over text fields, and ⌘⌫
             // in the search field must delete text, not pages.
@@ -254,6 +278,21 @@ struct ReaderCommands: Commands {
             toolItem(.rectangle, key: "r")
             toolItem(.ellipse, key: "o")
             toolItem(.arrow, key: "a")
+            Divider()
+            toolItem(.redact, key: "x")
+            Button(L("Mark Selection for Redaction")) { documentLibrary?.markSelectionForRedaction() }
+                .disabled(knownEmpty)
+            Button(L("Apply Redactions…")) { documentLibrary?.applyRedactions() }
+                .disabled(knownEmpty)
+            Divider()
+            Button(L("Insert Image…")) { documentLibrary?.presentInsertImagePanel() }
+                .disabled(knownEmpty)
+            Button(L("Add Signature…")) {
+                if documentLibrary?.canAnnotate == true { documentLibrary?.isAddingSignature = true }
+            }
+            .disabled(knownEmpty || focusedLibrary.map { $0.document != nil && !$0.canAnnotate } ?? false)
+            Button(L("Add Link…")) { documentLibrary?.addLinkToSelection() }
+                .disabled(knownEmpty)
         }
     }
 

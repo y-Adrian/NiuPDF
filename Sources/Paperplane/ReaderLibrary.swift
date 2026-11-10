@@ -3,6 +3,7 @@ import OSLog
 import PDFKit
 import PaperplaneCore
 import SwiftUI
+import UniformTypeIdentifiers
 
 enum ReaderLayout: String, CaseIterable, Identifiable {
     case continuous
@@ -134,6 +135,8 @@ enum AnnotationTool: String, CaseIterable, Identifiable {
     case rectangle
     case ellipse
     case arrow
+    /// Marks areas to redact; see `Redaction.swift`.
+    case redact
 
     var id: String { rawValue }
 
@@ -154,6 +157,7 @@ enum AnnotationTool: String, CaseIterable, Identifiable {
         case .rectangle: L("Rectangle")
         case .ellipse: L("Ellipse")
         case .arrow: L("Arrow")
+        case .redact: L("Redact")
         }
     }
 
@@ -170,6 +174,7 @@ enum AnnotationTool: String, CaseIterable, Identifiable {
         case .rectangle: "rectangle"
         case .ellipse: "circle"
         case .arrow: "arrow.up.right"
+        case .redact: "rectangle.inset.filled"
         }
     }
 
@@ -308,6 +313,10 @@ final class ReaderLibrary: ObservableObject {
     @Published private(set) var readerRestrictions: PDFPasswordSettings?
     /// Shows the sheet that sets or changes the passwords.
     @Published var isEditingPassword = false
+    /// Shows the signature sheet.
+    @Published var isAddingSignature = false
+    /// The crop or split sheet, while shown.
+    @Published var pageSheet: PageSheet?
     @Published var layoutMode: ReaderLayout = ReaderLayout(
         rawValue: UserDefaults.standard.string(forKey: "readerLayoutMode") ?? ""
     ) ?? .continuous {
@@ -330,6 +339,13 @@ final class ReaderLibrary: ObservableObject {
         // Switching to another app is a natural moment to have everything on disk.
         observers.append(center.addObserver(forName: NSApplication.willResignActiveNotification, object: nil, queue: .main) { [weak self] _ in
             MainActor.assumeIsolated { self?.autosaveNow() }
+        })
+        // PDFKit fills in form fields itself; see `formFieldDidChange`.
+        observers.append(center.addObserver(forName: Self.formDidChangeValue, object: nil, queue: .main) { [weak self] note in
+            MainActor.assumeIsolated {
+                guard let self, let document = self.document, note.object as? PDFDocument === document else { return }
+                self.formFieldDidChange()
+            }
         })
         // Settings changes the shared autosave setting for every window.
         observers.append(center.addObserver(forName: UserDefaults.didChangeNotification, object: nil, queue: .main) { [weak self] _ in
@@ -410,6 +426,7 @@ final class ReaderLibrary: ObservableObject {
         for index in 0..<opened.document.pageCount {
             if let page = opened.document.page(at: index) { prepareNotes(on: page) }
         }
+        refreshPageMarks(in: opened.document)
         document = opened.document
         fileURL = url
         // The annotation tools stay closed while the file forbids annotations.
@@ -1007,7 +1024,7 @@ final class ReaderLibrary: ObservableObject {
     /// Whether a tool's annotations can be see-through. Text boxes cannot:
     /// PDFKit drops the alpha of a text color as soon as it is set.
     static func hasOpacity(_ tool: AnnotationTool) -> Bool {
-        tool != .select && tool != .note && tool != .textBox
+        tool != .select && tool != .note && tool != .textBox && tool != .redact
     }
 
     /// Opacity for new annotations of a tool: each markup tool has its own;
@@ -1204,6 +1221,10 @@ final class ReaderLibrary: ObservableObject {
         guard canAnnotate else { return }
         let rect = CGRect(x: min(start.x, end.x), y: min(start.y, end.y), width: abs(end.x - start.x), height: abs(end.y - start.y))
         guard max(rect.width, rect.height) >= 4 else { return }
+        if tool == .redact {
+            addRedactionMarks([(page, rect)])
+            return
+        }
         let shape: PDFAnnotation
         switch tool {
         case .arrow:
@@ -1349,7 +1370,7 @@ final class ReaderLibrary: ObservableObject {
 
     /// Annotations the select tool can drag to a new place.
     static func isMovable(_ annotation: PDFAnnotation) -> Bool {
-        ["FreeText", "Ink", "Square", "Circle", "Line"].contains(annotation.type ?? "")
+        ["FreeText", "Ink", "Square", "Circle", "Line"].contains(annotation.type ?? "") || ImageStamp.isImage(annotation)
     }
 
     /// The color an annotation shows: the text color for text boxes.
@@ -1465,11 +1486,11 @@ final class ReaderLibrary: ObservableObject {
         hiddenNativeAnnotations[ObjectIdentifier(annotation)] = annotation
     }
 
-    /// Drawings, shapes and text boxes on a page for the overlay to draw.
+    /// Drawings, shapes, text boxes, watermarks and headers on a page for the overlay to draw.
     func overlayDrawnAnnotations(on page: PDFPage) -> [PDFAnnotation] {
         prepareNotes(on: page)
         return page.annotations.filter {
-            (Self.overlayDrawnTypes.contains($0.type ?? "") || MarkupEngine.isSquiggly($0))
+            (Self.overlayDrawnTypes.contains($0.type ?? "") || MarkupEngine.isSquiggly($0) || $0 is PageMark)
                 && hiddenNativeAnnotations[ObjectIdentifier($0)] != nil
                 && $0 !== annotationBeingTyped
         }
@@ -1479,6 +1500,7 @@ final class ReaderLibrary: ObservableObject {
     /// overlay. Annotations their author hid stay hidden. Idempotent per page.
     func prepareNotes(on page: PDFPage) {
         guard preparedNotePages.insert(ObjectIdentifier(page)).inserted else { return }
+        remakePageMarks(on: page)
         for annotation in page.annotations {
             let type = annotation.type ?? ""
             if type != "FreeText" { Self.restoreOpacity(of: annotation) }
@@ -1610,6 +1632,17 @@ final class ReaderLibrary: ObservableObject {
         scheduleAutosave()
     }
 
+    /// A form field changed (see `FormFields.swift`). Every change, also PDFKit
+    /// undoing one, counts as a new edit: its undo steps are not this app's, so
+    /// a filled form is never taken for saved.
+    func formFieldDidChange() {
+        guard document != nil else { return }
+        if changeCount < savedChangeCount { savedChangeCount = -1 }
+        changeCount += 1
+        hasUnsavedChanges = changeCount != savedChangeCount
+        scheduleAutosave()
+    }
+
     // MARK: - Autosave
 
     private func scheduleAutosave() {
@@ -1683,7 +1716,10 @@ final class ReaderLibrary: ObservableObject {
         for index in 0..<document.pageCount {
             guard let page = document.page(at: index) else { continue }
             for annotation in page.annotations {
-                guard let type = annotation.type, let kind = MarkupEngine.tool(of: annotation)?.title ?? Self.listedAnnotationKinds[type],
+                guard let type = annotation.type,
+                      let kind = ImageStamp.isImage(annotation) ? L("Image")
+                        : Self.isRedactionMark(annotation) ? L("Redaction Mark")
+                        : MarkupEngine.tool(of: annotation)?.title ?? Self.listedAnnotationKinds[type],
                       let listKind = AnnotationListKind.of(annotation),
                       pendingCreation?.annotation !== annotation else { continue }
                 var text = ""
@@ -1724,12 +1760,20 @@ final class ReaderLibrary: ObservableObject {
 
     static let exportResolutions: [CGFloat] = [72, 150, 300]
     @Published var exportFlattensAnnotations = false
+    /// Recompresses images in the exported copy; the open file is left alone.
+    @Published var exportReducesFileSize = false
+    @Published var textExportFormat: TextExportFormat = .plainText
     @Published var imageExportFormat: PageImageFormat = .png
     @Published var imageExportRange: ImageExportRange = .currentPage
     @Published var imageExportPages = ""
     @Published var imageExportResolution: CGFloat = 150
     /// Images written so far and in all, while an image export runs.
     @Published private(set) var exportProgress: (done: Int, total: Int)?
+    /// Pages read so far while text is recognized; see `TextRecognitionSheet.swift`.
+    @Published var recognitionProgress: (done: Int, total: Int)?
+    /// The title of `PageProgressSheet`.
+    @Published var progressTitle = ""
+    var recognitionTask: Task<Void, Never>?
     /// A short result shown in the export row for a few seconds.
     @Published private(set) var exportStatus: String?
     private var exportTask: Task<Void, Never>?
@@ -1740,7 +1784,9 @@ final class ReaderLibrary: ObservableObject {
         commitPendingEdits?()
         let panel = NSSavePanel()
         panel.allowedContentTypes = [.pdf]
-        panel.nameFieldStringValue = (exportFlattensAnnotations ? L("%@ (Flattened)", displayName) : L("%@ (Copy)", displayName)) + ".pdf"
+        let name = exportReducesFileSize ? L("%@ (Compressed)", displayName)
+            : exportFlattensAnnotations ? L("%@ (Flattened)", displayName) : L("%@ (Copy)", displayName)
+        panel.nameFieldStringValue = name + ".pdf"
         panel.prompt = L("Export")
         guard panel.runModal() == .OK, let url = panel.url else { return }
         writePDFCopy(of: document, to: url)
@@ -1753,8 +1799,47 @@ final class ReaderLibrary: ObservableObject {
         }
         do {
             try withNativeNotesRestored {
-                try DocumentExporter.writeCopy(of: document, to: url, flattenAnnotations: exportFlattensAnnotations)
+                try DocumentExporter.writeCopy(of: document, to: url, flattenAnnotations: exportFlattensAnnotations,
+                                               reducesFileSize: exportReducesFileSize, repairingButtons: buttonWidgetStates(in: document))
             }
+            if exportReducesFileSize, let fileURL, let before = Self.fileSize(fileURL), let after = Self.fileSize(url) {
+                let format = { (bytes: Int) in ByteCountFormatter.string(fromByteCount: Int64(bytes), countStyle: .file) }
+                showExportStatus(L("Exported “%@” (%@ → %@).", url.lastPathComponent, format(before), format(after)))
+            } else {
+                showExportStatus(L("Exported “%@”.", url.lastPathComponent))
+            }
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+    }
+
+    private static func fileSize(_ url: URL) -> Int? {
+        (try? url.resourceValues(forKeys: [.fileSizeKey]))?.fileSize
+    }
+
+    /// Saves the document's text as plain text, rich text or Word.
+    func exportText() {
+        guard let document else { return }
+        guard canCopy else {
+            errorMessage = L("This document doesn’t allow copying its content, so its text can’t be exported.")
+            return
+        }
+        commitPendingEdits?()
+        let format = textExportFormat
+        let data: Data
+        do {
+            data = try DocumentConverter.textData(of: document, format: format)
+        } catch {
+            errorMessage = error.localizedDescription
+            return
+        }
+        let panel = NSSavePanel()
+        panel.allowedContentTypes = [UTType(filenameExtension: format.fileExtension) ?? .plainText]
+        panel.nameFieldStringValue = displayName + "." + format.fileExtension
+        panel.prompt = L("Export")
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        do {
+            try data.write(to: url)
             showExportStatus(L("Exported “%@”.", url.lastPathComponent))
         } catch {
             errorMessage = error.localizedDescription
@@ -1880,7 +1965,14 @@ final class ReaderLibrary: ObservableObject {
 
     /// A private copy of the document as it would be saved, for rendering off
     /// the main thread without touching the document on screen.
-    private func exportSnapshot(of document: PDFDocument) -> UncheckedSendable<PDFDocument>? {
+    /// A copy for showing elsewhere (the slideshow): every annotation in
+    /// standard form, so PDFKit draws them all, and unlocked.
+    func displaySnapshot() -> PDFDocument? {
+        commitPendingEdits?()
+        return document.flatMap(exportSnapshot(of:))?.value
+    }
+
+    func exportSnapshot(of document: PDFDocument) -> UncheckedSendable<PDFDocument>? {
         guard let data = withNativeNotesRestored({ document.dataRepresentation() }),
               let copy = PDFDocument(data: data) else { return nil }
         if copy.isLocked {
@@ -1889,7 +1981,7 @@ final class ReaderLibrary: ObservableObject {
         return UncheckedSendable(value: copy)
     }
 
-    private func showExportStatus(_ text: String) {
+    func showExportStatus(_ text: String) {
         exportStatus = text
         Task { @MainActor [weak self] in
             try? await Task.sleep(nanoseconds: 4_000_000_000)
@@ -1957,7 +2049,8 @@ final class ReaderLibrary: ObservableObject {
         guard let document, let fileURL, let fileRevision else { throw SafePDFFileStoreError.unreadablePDF }
         autosaveTask?.cancel()
         self.fileRevision = try withNativeNotesRestored {
-            try SafePDFFileStore.save(document, to: fileURL, expectedRevision: fileRevision, writeOptions: options)
+            try SafePDFFileStore.save(document, to: fileURL, expectedRevision: fileRevision, writeOptions: options,
+                                      repairingButtons: buttonWidgetStates())
         }
         savedChangeCount = changeCount
         hasUnsavedChanges = false
@@ -1974,7 +2067,7 @@ final class ReaderLibrary: ObservableObject {
         }
         autosaveTask?.cancel()
         self.fileRevision = try withNativeNotesRestored {
-            try SafePDFFileStore.save(document, to: fileURL, expectedRevision: fileRevision)
+            try SafePDFFileStore.save(document, to: fileURL, expectedRevision: fileRevision, repairingButtons: buttonWidgetStates())
         }
         savedChangeCount = changeCount
         hasUnsavedChanges = false

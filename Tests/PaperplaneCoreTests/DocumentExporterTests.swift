@@ -16,6 +16,33 @@ final class DocumentExporterTests: XCTestCase {
         try? FileManager.default.removeItem(at: temporaryDirectory)
     }
 
+    func testReducingFileSizeShrinksImagesAndKeepsTextAndAnnotations() throws {
+        // A page with a large, busy image, plus text and a note from a fixture page.
+        let photo = NSImage(size: NSSize(width: 2400, height: 1800))
+        photo.lockFocus()
+        for index in 0..<400 {
+            NSColor(calibratedHue: CGFloat(index % 37) / 37, saturation: 0.8, brightness: 0.9, alpha: 1).setFill()
+            NSRect(x: (index * 61) % 2400, y: (index * 43) % 1800, width: 180, height: 140).fill()
+        }
+        photo.unlockFocus()
+        let document = try XCTUnwrap(PDFDocument(url: URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+            .appendingPathComponent("TestCorpus/fixtures/markup-regression.pdf")))
+        document.insert(try XCTUnwrap(PDFPage(image: photo)), at: 1)
+        let plain = temporaryDirectory.appendingPathComponent("plain.pdf")
+        let reduced = temporaryDirectory.appendingPathComponent("reduced.pdf")
+        try DocumentExporter.writeCopy(of: document, to: plain, flattenAnnotations: false)
+        try DocumentExporter.writeCopy(of: document, to: reduced, flattenAnnotations: false, reducesFileSize: true)
+
+        let plainSize = try XCTUnwrap(plain.resourceValues(forKeys: [.fileSizeKey]).fileSize)
+        let reducedSize = try XCTUnwrap(reduced.resourceValues(forKeys: [.fileSizeKey]).fileSize)
+        XCTAssertLessThan(Double(reducedSize), Double(plainSize) * 0.7, "\(plainSize) -> \(reducedSize)")
+        let original = try XCTUnwrap(PDFDocument(url: plain)), copy = try XCTUnwrap(PDFDocument(url: reduced))
+        XCTAssertEqual(copy.pageCount, 2)
+        XCTAssertEqual(copy.page(at: 0)?.string, original.page(at: 0)?.string)
+        XCTAssertEqual(copy.page(at: 0)?.annotations.map(\.type), original.page(at: 0)?.annotations.map(\.type))
+    }
+
     func testPageRanges() throws {
         XCTAssertEqual(try PageRangeParser.pages(from: "1-3, 5", pageCount: 10), [0, 1, 2, 4])
         XCTAssertEqual(try PageRangeParser.pages(from: "8-", pageCount: 10), [7, 8, 9])
@@ -67,6 +94,30 @@ final class DocumentExporterTests: XCTestCase {
         XCTAssertEqual(flattened.page(at: 0)?.annotations.count, 0)
         XCTAssertEqual(flattened.pageCount, document.pageCount)
         XCTAssertEqual(document.page(at: 0)?.annotations.count, annotationCount, "Exporting must not change the open document.")
+    }
+
+    /// An annotation that paints itself, as images, signatures and watermarks do.
+    private final class PaintedStamp: PDFAnnotation {
+        override func draw(with box: PDFDisplayBox, in context: CGContext) {
+            context.setFillColor(NSColor.black.cgColor)
+            context.fill(bounds.insetBy(dx: 10, dy: 10))
+        }
+    }
+
+    func testFlatteningKeepsSelfDrawnAnnotations() throws {
+        let document = PDFDocument()
+        let page = PDFPage()
+        document.insert(page, at: 0)
+        page.addAnnotation(PaintedStamp(bounds: CGRect(x: 100, y: 100, width: 200, height: 100), forType: .stamp, withProperties: nil))
+        let flat = temporaryDirectory.appendingPathComponent("painted.pdf")
+        try DocumentExporter.writeCopy(of: document, to: flat, flattenAnnotations: true)
+        let flattened = try XCTUnwrap(PDFDocument(url: flat)?.page(at: 0))
+        XCTAssertEqual(flattened.annotations.count, 0)
+        // The filled middle of the stamp is in the page content.
+        let data = try XCTUnwrap(DocumentExporter.imageData(for: flattened, dpi: 36, format: .png))
+        let image = try XCTUnwrap(NSBitmapImageRep(data: data))
+        let color = try XCTUnwrap(image.colorAt(x: 100, y: image.pixelsHigh - 75))
+        XCTAssertLessThan(color.brightnessComponent, 0.2)
     }
 
     private func hasDarkPixels(_ image: NSBitmapImageRep) -> Bool {

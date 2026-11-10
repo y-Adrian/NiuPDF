@@ -227,7 +227,12 @@ final class PageAnnotationOverlay: NSView {
     }
 
     override func draw(_ dirtyRect: NSRect) {
-        for annotation in library?.overlayDrawnAnnotations(on: page) ?? [] {
+        let annotations = library?.overlayDrawnAnnotations(on: page) ?? []
+        // Watermarks and headers first, below drawings and shapes.
+        if let context = NSGraphicsContext.current?.cgContext {
+            for case let mark as PageMark in annotations { mark.drawContent(in: context) }
+        }
+        for annotation in annotations where !(annotation is PageMark) {
             VectorAnnotationRenderer.draw(annotation)
         }
         drawSelection()

@@ -11,3 +11,5 @@
 "Enter an open password, or restrict what readers may do." = "Enter an open password, or restrict what readers may do.";
 "Restrictions need a permissions password." = "Restrictions need a permissions password.";
 "The permissions password must differ from the open password, or anyone who can open the document could lift the restrictions." = "The permissions password must differ from the open password, or anyone who can open the document could lift the restrictions.";
+"These pages have no text to export. Scanned pages need text recognition first." = "These pages have no text to export. Scanned pages need text recognition first.";
+"“%@” couldn’t be read as an image." = "“%@” couldn’t be read as an image.";

@@ -67,6 +67,73 @@ extension ReaderLibrary {
         pagesDidChange(selecting: selectedPages)
     }
 
+    // MARK: Crop
+
+    /// Crops pages to leave `margins` (as shown) off each page's media box;
+    /// false when that would leave too little of some page.
+    @discardableResult
+    func cropPages(_ indexes: IndexSet, margins: PageMargins) -> Bool {
+        guard let document, canChangePages else { return false }
+        let pages = indexes.compactMap { document.page(at: $0) }
+        let boxes = pages.map { PageCropper.cropBox(mediaBox: $0.bounds(for: .mediaBox), rotation: $0.rotation, margins: margins) }
+        guard !pages.isEmpty, boxes.allSatisfy({ $0 != nil }) else { return false }
+        setCropBoxes(pages, to: boxes.compactMap { $0 }, actionName: L("Crop Pages"))
+        return true
+    }
+
+    /// Shows the whole media box again.
+    func uncropPages(_ indexes: IndexSet) {
+        guard let document, canChangePages else { return }
+        let pages = indexes.compactMap { document.page(at: $0) }
+        setCropBoxes(pages, to: pages.map { $0.bounds(for: .mediaBox) }, actionName: L("Restore Page Size"))
+    }
+
+    private func setCropBoxes(_ pages: [PDFPage], to boxes: [CGRect], actionName: String) {
+        let previous = pages.map { $0.bounds(for: .cropBox) }
+        for (page, box) in zip(pages, boxes) { page.setBounds(box, for: .cropBox) }
+        pdfView?.undoManager?.registerUndo(withTarget: self) { target in
+            target.setCropBoxes(pages, to: previous, actionName: actionName)
+        }
+        pdfView?.undoManager?.setActionName(actionName)
+        pdfView?.layoutDocumentView()
+        pagesDidChange(selecting: selectedPages)
+    }
+
+    /// The margins (as shown) a page is cropped by now.
+    func cropMargins(ofPage index: Int) -> PageMargins {
+        guard let page = document?.page(at: index) else { return .zero }
+        return PageCropper.margins(mediaBox: page.bounds(for: .mediaBox), cropBox: page.bounds(for: .cropBox), rotation: page.rotation)
+    }
+
+    // MARK: Split
+
+    /// Writes each group of pages to its own file in `folder`, named after
+    /// the document and the pages; returns how many files were written.
+    func splitDocument(into groups: [[Int]], folder: URL) throws -> Int {
+        guard canCopy else { throw DocumentProtectionError.restricted }
+        let didStart = folder.startAccessingSecurityScopedResource()
+        defer { if didStart { folder.stopAccessingSecurityScopedResource() } }
+        var written = 0
+        for group in groups where !group.isEmpty {
+            let name = L("%@ (Pages %@)", displayName, DocumentSplitter.label(for: group)) + ".pdf"
+            try writePages(IndexSet(group), to: Self.unusedURL(for: name, in: folder))
+            written += 1
+        }
+        return written
+    }
+
+    /// `name` in `folder`, numbered when a file of that name exists.
+    private static func unusedURL(for name: String, in folder: URL) -> URL {
+        let base = (name as NSString).deletingPathExtension
+        var url = folder.appendingPathComponent(name)
+        var number = 2
+        while FileManager.default.fileExists(atPath: url.path) {
+            url = folder.appendingPathComponent("\(base) \(number).pdf")
+            number += 1
+        }
+        return url
+    }
+
     func deletePages(_ indexes: IndexSet? = nil) {
         guard canChangePages else { return }
         commitPendingEdits?()
@@ -116,7 +183,13 @@ extension ReaderLibrary {
                 errorMessage = SafePDFFileStoreError.unreadablePDF.localizedDescription
                 return
             }
-            if source.isLocked, !unlock(source, at: url) { return }
+            // The shared prompt, not `unlock`: that would keep the source's
+            // password as this document's.
+            if source.isLocked, Self.askForPassword(unlocking: source, at: url) == nil { return }
+            guard Self.allowsCopyingPages(of: source) else {
+                errorMessage = L("“%@” doesn’t allow copying its content, so its pages can’t be inserted.", url.lastPathComponent)
+                return
+            }
             // Copies carry their annotations and stay valid after the source closes.
             inserted += (0..<source.pageCount).compactMap { source.page(at: $0).flatMap(DocumentMerger.copy(of:)) }
         }
@@ -145,6 +218,11 @@ extension ReaderLibrary {
 
     /// Asks where to save the target pages as a new PDF.
     func extractPages(_ indexes: IndexSet? = nil) {
+        // A new file would not carry the original's restrictions.
+        guard canCopy else {
+            errorMessage = L("This document doesn’t allow copying its content, so its pages can’t be extracted.")
+            return
+        }
         let pages = indexes ?? targetPages
         let panel = NSSavePanel()
         panel.allowedContentTypes = [.pdf]
@@ -191,6 +269,32 @@ extension ReaderLibrary {
         pagesDidChange(selecting: selection)
     }
 
+    /// Puts new pages in place of old ones, moving each old page's annotations
+    /// (the same objects, with everything the overlay knows about them) to its
+    /// new page; undo puts the old pages and their annotations back. Used for
+    /// pages remade with a text layer or redacted. Annotations in `leaving`
+    /// stay on the old page, so they go and come back with it.
+    func replacePages(_ replacements: [(old: PDFPage, new: PDFPage)], actionName: String,
+                      leaving: Set<ObjectIdentifier> = [], returning: Set<ObjectIdentifier> = []) {
+        guard let document, canChangePages, !replacements.isEmpty else { return }
+        var order = allPages
+        for (old, new) in replacements {
+            guard let index = order.firstIndex(where: { $0 === old }) else { continue }
+            order[index] = new
+            for annotation in old.annotations where !leaving.contains(ObjectIdentifier(annotation)) {
+                old.removeAnnotation(annotation)
+                new.addAnnotation(annotation)
+            }
+        }
+        applyPageOrder(order, to: document)
+        pdfView?.undoManager?.registerUndo(withTarget: self) { target in
+            target.replacePages(replacements.map { (old: $0.new, new: $0.old) }, actionName: actionName,
+                                leaving: returning, returning: leaving)
+        }
+        pdfView?.undoManager?.setActionName(actionName)
+        pagesDidChange(selecting: selectedPages)
+    }
+
     /// Rearranges pages in place with the fewest removals and insertions, so
     /// unaffected pages keep their objects, annotations and rendering.
     private func applyPageOrder(_ order: [PDFPage], to document: PDFDocument) {
@@ -217,6 +321,8 @@ extension ReaderLibrary {
         for index in 0..<document.pageCount {
             if let page = document.page(at: index) { prepareNotes(on: page) }
         }
+        // Page numbers follow the new order; marks follow rotation and cropping.
+        refreshPageMarks(in: document)
         selectedPages = (selection ?? []).filteredIndexSet { $0 < document.pageCount }
         syncBookmarksToPages()
         currentPageIndex = min(currentPageIndex, max(document.pageCount - 1, 0))

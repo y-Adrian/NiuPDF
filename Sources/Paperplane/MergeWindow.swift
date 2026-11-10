@@ -6,11 +6,15 @@ import UniformTypeIdentifiers
 
 /// One file in the merge list, with the pages to take from it.
 struct MergeItem: Identifiable {
-    let id = UUID()
+    var id = UUID()
     let url: URL
     /// The open window's document when the file is open, so unsaved changes
-    /// are merged too; otherwise a copy read from disk.
-    let document: PDFDocument
+    /// are merged too; otherwise a copy read from disk. An image is a
+    /// document of one page made from it.
+    var document: PDFDocument
+    /// The image file's contents, for an image, to make its page again in
+    /// another page size.
+    var imageData: Data?
     /// Pages such as "1-3, 5"; empty means all pages.
     var pageRange = ""
 
@@ -53,6 +57,12 @@ final class MergeModel: ObservableObject {
 
     @Published var items: [MergeItem] = []
     @Published var errorMessage: String?
+    /// The page size of images; changing it makes their pages again.
+    @Published var imagePageSize: ImagePageSize = .a4 {
+        didSet { remakeImagePages() }
+    }
+
+    var hasImages: Bool { items.contains { $0.imageData != nil } }
     private let thumbnails = NSCache<PDFPage, NSImage>()
 
     /// Each page of the result, with the file it comes from.
@@ -66,17 +76,26 @@ final class MergeModel: ObservableObject {
 
     func thumbnail(for page: PDFPage) -> NSImage {
         if let image = thumbnails.object(forKey: page) { return image }
-        let image = page.thumbnail(of: CGSize(width: 150, height: 190), for: .mediaBox)
+        let image = PageMark.thumbnail(of: page, size: CGSize(width: 150, height: 190), for: .mediaBox)
         thumbnails.setObject(image, forKey: page)
         return image
     }
 
-    /// Adds PDFs at a position in the list (the end by default). A file opened
-    /// in a reader window brings that window's document.
+    /// Adds PDFs and images at a position in the list (the end by default). A
+    /// file opened in a reader window brings that window's document.
     func add(_ urls: [URL], at position: Int? = nil) {
         var added: [MergeItem] = []
-        for url in urls where url.pathExtension.lowercased() == "pdf" {
+        for url in urls {
+            if url.pathExtension.lowercased() != "pdf" {
+                guard UTType(filenameExtension: url.pathExtension)?.conforms(to: .image) == true else { continue }
+                if let item = imageItem(at: url) { added.append(item) }
+                continue
+            }
             if let library = AppModel.shared.library(showing: url), let document = library.document {
+                guard ReaderLibrary.allowsCopyingPages(of: document) else {
+                    errorMessage = L("“%@” doesn’t allow copying its content, so it can’t be merged.", url.lastPathComponent)
+                    continue
+                }
                 added.append(MergeItem(url: url, document: document))
                 continue
             }
@@ -88,14 +107,51 @@ final class MergeModel: ObservableObject {
                 continue
             }
             if document.isLocked, ReaderLibrary.askForPassword(unlocking: document, at: url) == nil { continue }
+            // The merged file would not carry the source's restrictions.
+            guard ReaderLibrary.allowsCopyingPages(of: document) else {
+                errorMessage = L("“%@” doesn’t allow copying its content, so it can’t be merged.", url.lastPathComponent)
+                continue
+            }
             added.append(MergeItem(url: url, document: document))
         }
         items.insert(contentsOf: added, at: min(position ?? items.count, items.count))
     }
 
+    private func imageItem(at url: URL) -> MergeItem? {
+        let didStartAccess = url.startAccessingSecurityScopedResource()
+        defer { if didStartAccess { url.stopAccessingSecurityScopedResource() } }
+        do {
+            let data = try Data(contentsOf: url)
+            let page = try DocumentConverter.page(fromImageData: data, named: url.lastPathComponent, size: imagePageSize)
+            return MergeItem(url: url, document: DocumentMerger.document(with: [page]), imageData: data)
+        } catch {
+            errorMessage = (error as? LocalizedError)?.errorDescription ?? L("“%@” couldn’t be read as an image.", url.lastPathComponent)
+            return nil
+        }
+    }
+
+    private func remakeImagePages() {
+        for index in items.indices {
+            guard let data = items[index].imageData,
+                  let page = try? DocumentConverter.page(fromImageData: data, named: items[index].name, size: imagePageSize) else { continue }
+            items[index].document = DocumentMerger.document(with: [page])
+        }
+    }
+
+    /// Asks for images and adds them, in name order, as one page each.
+    func presentImagePanel() {
+        let panel = NSOpenPanel()
+        panel.allowedContentTypes = [.image]
+        panel.allowsMultipleSelection = true
+        panel.prompt = L("Add")
+        panel.message = L("Each image becomes a page, in name order. Drag them to change the order.")
+        guard panel.runModal() == .OK else { return }
+        add(panel.urls.sorted { $0.lastPathComponent.localizedStandardCompare($1.lastPathComponent) == .orderedAscending })
+    }
+
     func presentAddPanel() {
         let panel = NSOpenPanel()
-        panel.allowedContentTypes = [.pdf]
+        panel.allowedContentTypes = [.pdf, .image]
         panel.allowsMultipleSelection = true
         panel.prompt = L("Add")
         guard panel.runModal() == .OK else { return }
@@ -130,7 +186,7 @@ final class MergeModel: ObservableObject {
         guard canMerge else { return false }
         let panel = NSSavePanel()
         panel.allowedContentTypes = [.pdf]
-        panel.nameFieldStringValue = L("Merged") + ".pdf"
+        panel.nameFieldStringValue = (items.allSatisfy { $0.imageData != nil } ? L("Images") : L("Merged")) + ".pdf"
         panel.prompt = L("Merge")
         guard panel.runModal() == .OK, let url = panel.url else { return false }
         do {
@@ -232,7 +288,7 @@ struct MergeWindow: View {
             Image(systemName: "doc.on.doc")
                 .font(.system(size: 34, weight: .light))
                 .foregroundStyle(.tertiary)
-            Text(L("Drag PDFs here, or add them from your files."))
+            Text(L("Drag PDFs or images here, or add them from your files."))
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
             Button(L("Add Files…")) { model.presentAddPanel() }
@@ -309,6 +365,15 @@ struct MergeWindow: View {
         HStack {
             Text(L("%ld files, %ld pages", model.items.count, model.previewPages.count))
                 .foregroundStyle(.secondary)
+            if model.hasImages {
+                Picker(L("Image pages:"), selection: $model.imagePageSize) {
+                    Text(L("Image Size")).tag(ImagePageSize.image)
+                    Text(verbatim: "A4").tag(ImagePageSize.a4)
+                    Text(verbatim: "Letter").tag(ImagePageSize.letter)
+                }
+                .fixedSize()
+                .help(L("Images are fitted to A4 or Letter pages, turned to landscape when wide."))
+            }
             Spacer()
             Button(L("Cancel")) { window?.performClose(nil) }
                 .keyboardShortcut(.cancelAction)

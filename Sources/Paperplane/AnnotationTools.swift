@@ -78,7 +78,7 @@ final class AnnotationToolHandler {
         case .ink:
             drag = .ink(page: page, points: [point])
             return true
-        case .rectangle, .ellipse, .arrow:
+        case .rectangle, .ellipse, .arrow, .redact:
             drag = .shape(page: page, tool: library.activeTool, start: point, end: point)
             return true
         }
@@ -141,7 +141,7 @@ final class AnnotationToolHandler {
         switch library?.activeTool ?? .select {
         case .select: nil
         case .highlight, .underline, .squiggly, .strikeOut, .textBox: .iBeam
-        case .note, .ink, .rectangle, .ellipse, .arrow: .crosshair
+        case .note, .ink, .rectangle, .ellipse, .arrow, .redact: .crosshair
         }
     }
 

@@ -1,5 +1,6 @@
 import AppKit
 import PDFKit
+import Quartz
 
 public enum PageImageFormat: String, CaseIterable, Sendable {
     case png
@@ -31,10 +32,41 @@ public enum DocumentExportError: LocalizedError, Equatable {
 public enum DocumentExporter {
     /// Writes a copy of the document. Flattening draws the annotations into
     /// the page content, so they look the same everywhere but can no longer be
-    /// edited.
-    public static func writeCopy(of document: PDFDocument, to url: URL, flattenAnnotations: Bool) throws {
-        let options: [PDFDocumentWriteOption: Any] = flattenAnnotations ? [.burnInAnnotationsOption: true] : [:]
-        guard document.write(to: url, withOptions: options) else { throw DocumentExportError.unableToWrite }
+    /// edited. Reducing the file size recompresses and downsamples images
+    /// with the system's “Reduce File Size” filter, as Preview does; text and
+    /// annotations stay as they are.
+    /// `buttons` are the document's check boxes and radio buttons, repaired
+    /// after writing as in `ButtonFieldRepair`.
+    public static func writeCopy(of document: PDFDocument, to url: URL, flattenAnnotations: Bool, reducesFileSize: Bool = false,
+                                 repairingButtons buttons: [ButtonWidgetState] = []) throws {
+        var options: [PDFDocumentWriteOption: Any] = flattenAnnotations ? [.burnInAnnotationsOption: true] : [:]
+        if reducesFileSize {
+            // PDFKit's own image options leave the file unchanged; the filter does the work.
+            guard let filter = reduceFileSizeFilter else { throw DocumentExportError.unableToWrite }
+            options[quartzFilterOption] = filter
+        }
+        guard flattenedSource(for: document, flattening: flattenAnnotations).write(to: url, withOptions: options) else {
+            throw DocumentExportError.unableToWrite
+        }
+        // Flattening draws the buttons as they look, which PDFKit gets right.
+        if !flattenAnnotations { try ButtonFieldRepair.repairFile(at: url, buttons: buttons) }
+    }
+
+    /// When flattening, PDFKit draws annotations that paint themselves
+    /// (images, signatures, watermarks) as crossed-out boxes, but it flattens
+    /// their written appearance correctly; so the document is written and read
+    /// back first. The document itself is used when that copy cannot be read.
+    private static func flattenedSource(for document: PDFDocument, flattening: Bool) -> PDFDocument {
+        guard flattening, let data = document.dataRepresentation(),
+              let written = PDFDocument(data: data), !written.isLocked else { return document }
+        return written
+    }
+
+    /// The write option that applies a Quartz filter, as Preview's export uses it.
+    private static let quartzFilterOption = PDFDocumentWriteOption(rawValue: "QuartzFilter")
+
+    private static var reduceFileSizeFilter: QuartzFilter? {
+        QuartzFilter(url: URL(fileURLWithPath: "/System/Library/Filters/Reduce File Size.qfilter"))
     }
 
     /// Renders a page, with its annotations and rotation, on white at `dpi`.

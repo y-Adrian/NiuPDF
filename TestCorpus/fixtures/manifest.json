@@ -58,6 +58,14 @@
       "type": "malformed-pdf",
       "pages": null,
       "notes": "Intentionally truncated invalid PDF; parser should fail safely."
+    },
+    {
+      "filename": "acroform-fields.pdf",
+      "bytes": 3681,
+      "sha256": "9593ade9eddd6acb753fa3369f4ab2973a848d73d6aab5fb809d56d4abfee42a",
+      "type": "form-fields",
+      "pages": 1,
+      "notes": "Hand-written AcroForm (make_acroform.py): text, multi-line, check box, radio group Red/Blue, combo, list and read-only fields."
     }
   ]
 }

@@ -50,7 +50,9 @@ extension ReaderLibrary {
     /// Annotations that can be copied and pasted elsewhere. Text markup is tied
     /// to the text under it, so it is not.
     static func isCopyable(_ annotation: PDFAnnotation) -> Bool {
-        isMovable(annotation) || annotation.type == "Text"
+        // An image from an earlier session has no image of its own to copy.
+        if ImageStamp.isImage(annotation) { return annotation is ImageStamp }
+        return isMovable(annotation) || annotation.type == "Text"
     }
 
     static let minimumAnnotationSize: CGFloat = 6
@@ -167,6 +169,7 @@ extension ReaderLibrary {
     /// file. A new annotation built from the original's dictionary is written,
     /// but takes the original's rectangle, so the geometry is applied after.
     static func freshCopy(of annotation: PDFAnnotation) -> PDFAnnotation? {
+        if let image = annotation as? ImageStamp { return image.duplicate() }
         guard let type = annotation.type else { return nil }
         var properties = annotation.annotationKeyValues
         // The page and popup belong to the original.

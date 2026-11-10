@@ -38,6 +38,12 @@ extension ReaderLibrary {
         return document.permissionsStatus == .owner || document.allowsCopying
     }
 
+    /// Copying pages into another file drops the source's restrictions, so it
+    /// needs the right to copy its content.
+    static func allowsCopyingPages(of document: PDFDocument) -> Bool {
+        document.permissionsStatus == .owner || document.allowsCopying
+    }
+
     /// The file has an open password or restrictions.
     var isPasswordProtected: Bool { requiresOpenPassword || readerRestrictions != nil }
 
