@@ -1,6 +1,6 @@
 # 交接说明
 
-新会话先读本文，再按需查 [DEVELOPMENT_LOG.md](DEVELOPMENT_LOG.md)（每阶段的决策、根因与验证）和 [ROADMAP.md](ROADMAP.md)。需求见 [产品需求文档.md](产品需求文档.md)。
+新会话先读本文；已支持的功能清单见 [FEATURES.md](FEATURES.md)（新增功能后同步更新）。再按需查 [DEVELOPMENT_LOG.md](DEVELOPMENT_LOG.md)（每阶段的决策、根因与验证）和 [ROADMAP.md](ROADMAP.md)。需求见 [产品需求文档.md](产品需求文档.md)。
 
 ## 当前状态（2026-11-11，分支 `leading`；3G-1 至 3H-6 均已提交，未推送）
 

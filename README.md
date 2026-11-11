@@ -4,6 +4,8 @@ A small native macOS PDF reader built with SwiftUI and PDFKit. It takes inspirat
 
 ## Features
 
+The complete, current feature list (in Chinese) is in [docs/FEATURES.md](docs/FEATURES.md). Highlights:
+
 - Open several PDFs at once with `⌘O`, by dragging them into the window or from Finder; each opens in its own tab, and tabs can be dragged out into windows
 - A start page with recent files; each file reopens at its own page and zoom
 - Standard shortcuts, following macOS Preview: `⌘W` close tab, `⌘T`/`⌘N` new tab/window, `⌘P` print, `⌥⌘1`–`4` sidebar, `⌘=`/`⌘-`/`⌘0`/`⌘9` zoom, `⌃⌘1`–`4` page layout, `⌥⌘↑`/`⌥⌘↓` pages, `⌃⌘H`/`U`/`S`… annotation tools
