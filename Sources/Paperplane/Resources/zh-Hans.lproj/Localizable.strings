@@ -471,3 +471,6 @@
 "Start" = "开始";
 "Reducing would not make this file smaller." = "压缩不会让这个文件变小。";
 "No text was found on the pages without text." = "在没有文字的页面上未识别出文字。";
+"Search for the text to redact first." = "请先搜索要涂黑的文字。";
+"Marked %ld matches for redaction." = "已将 %ld 处搜索结果标记为涂黑。";
+"Mark Search Results for Redaction" = "将搜索结果标记为涂黑";

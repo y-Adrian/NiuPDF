@@ -288,6 +288,8 @@ struct ReaderCommands: Commands {
             toolItem(.redact, key: "x")
             Button(L("Mark Selection for Redaction")) { documentLibrary?.markSelectionForRedaction() }
                 .disabled(knownEmpty)
+            Button(L("Mark Search Results for Redaction")) { documentLibrary?.markSearchResultsForRedaction() }
+                .disabled(knownEmpty)
             Button(L("Apply Redactions…")) { documentLibrary?.applyRedactions() }
                 .disabled(knownEmpty)
             Divider()

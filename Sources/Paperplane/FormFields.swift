@@ -10,8 +10,18 @@ extension ReaderLibrary {
 
     /// The check boxes and radio buttons, for `ButtonFieldRepair` after saving.
     func buttonWidgetStates(in document: PDFDocument? = nil) -> [ButtonWidgetState] {
-        guard let document = document ?? self.document else { return [] }
-        return (0..<document.pageCount).compactMap { document.page(at: $0) }.flatMap { page in
+        (document ?? self.document).map(Self.buttonWidgetStates(of:)) ?? []
+    }
+
+    /// As `buttonWidgetStates(in:)`, for any document.
+    nonisolated static func buttonWidgetStates(of document: PDFDocument) -> [ButtonWidgetState] {
+        buttonWidgetStates(on: (0..<document.pageCount).compactMap { document.page(at: $0) })
+    }
+
+    /// The buttons on some pages. Extract, Split and Merge read them on the
+    /// source pages: a copied button no longer knows whether it is on.
+    nonisolated static func buttonWidgetStates(on pages: [PDFPage]) -> [ButtonWidgetState] {
+        pages.flatMap { page in
             page.annotations.compactMap { widget -> ButtonWidgetState? in
                 guard widget.type == "Widget", widget.widgetFieldType == .button,
                       widget.widgetControlType == .radioButtonControl || widget.widgetControlType == .checkBoxControl else { return nil }

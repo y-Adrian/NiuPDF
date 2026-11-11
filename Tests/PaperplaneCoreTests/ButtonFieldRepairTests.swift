@@ -54,6 +54,21 @@ final class ButtonFieldRepairTests: XCTestCase {
         XCTAssertEqual(second.page(at: 0)!.annotations.first { $0.fieldName == "name" }?.widgetFieldType, .text, "Other fields are untouched.")
     }
 
+    func testCopiedPagesUseTheSourceStates() throws {
+        let document = try XCTUnwrap(PDFDocument(url: fixture("acroform-fields.pdf")))
+        let all = buttons(document)
+        all.first { $0.buttonWidgetStateString == "Red" }?.buttonWidgetState = .offState
+        all.first { $0.buttonWidgetStateString == "Blue" }?.buttonWidgetState = .onState
+        // As Extract and Merge do: the copy no longer knows which button is on.
+        let states = all.map {
+            ButtonWidgetState(rect: $0.bounds, onName: $0.buttonWidgetStateString, isOn: $0.buttonWidgetState == .onState,
+                              isRadio: $0.widgetControlType == .radioButtonControl)
+        }
+        let copy = DocumentMerger.document(with: [try XCTUnwrap(DocumentMerger.copy(of: try XCTUnwrap(document.page(at: 0))))])
+        let repaired = try XCTUnwrap(ButtonFieldRepair.repair(try XCTUnwrap(copy.dataRepresentation()), buttons: states))
+        XCTAssertEqual(self.states(try XCTUnwrap(PDFDocument(data: repaired))), ["agree/Yes=0", "color/Red=0", "color/Blue=1"])
+    }
+
     func testNothingToRepairLeavesTheFile() throws {
         let document = try XCTUnwrap(PDFDocument(url: fixture("acroform-fields.pdf")))
         let written = try XCTUnwrap(document.dataRepresentation())

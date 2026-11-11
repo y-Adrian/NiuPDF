@@ -178,7 +178,11 @@ final class MergeModel: ObservableObject {
                 pages += DocumentMerger.pageCopies(of: source)
             }
         }
-        try DocumentMerger.write(DocumentMerger.document(with: pages), to: url)
+        let merged = DocumentMerger.document(with: pages)
+        try DocumentMerger.write(merged, to: url)
+        // Copied buttons that were changed lose their names when written.
+        let sources = items.flatMap { item in (item.pages ?? []).compactMap { item.document.page(at: $0) } }
+        try ButtonFieldRepair.repairFile(at: url, buttons: ReaderLibrary.buttonWidgetStates(on: sources))
     }
 
     /// Asks where to save, writes the merged PDF and opens it. True when done.

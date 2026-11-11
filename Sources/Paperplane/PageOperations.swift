@@ -239,6 +239,8 @@ extension ReaderLibrary {
             }
         }
         guard extract.pageCount > 0, extract.write(to: url) else { throw DocumentExportError.unableToWrite }
+        // Copied buttons that were changed lose their names when written.
+        try ButtonFieldRepair.repairFile(at: url, buttons: Self.buttonWidgetStates(on: indexes.compactMap { document.page(at: $0) }))
     }
 
     // MARK: Order changes and undo

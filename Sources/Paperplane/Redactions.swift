@@ -60,6 +60,23 @@ extension ReaderLibrary {
         pdfView?.clearSelection()
     }
 
+    /// Annotate ▸ Mark Search Results for Redaction: every match of the
+    /// current search, on all pages, so a name or number goes everywhere.
+    func markSearchResultsForRedaction() {
+        guard canAnnotate else { return }
+        guard !searchResults.isEmpty else {
+            errorMessage = L("Search for the text to redact first.")
+            return
+        }
+        let areas = searchResults.flatMap { result in
+            result.selectionsByLine().flatMap { line in
+                line.pages.map { page in (page, line.bounds(for: page).insetBy(dx: -1, dy: -1)) }
+            }
+        }.filter { !$0.1.isEmpty }
+        addRedactionMarks(areas)
+        showExportStatus(L("Marked %ld matches for redaction.", searchResults.count))
+    }
+
     /// Annotate ▸ Apply Redactions: asks, then makes the marked pages again in
     /// the background with `recognitionProgress`, as text recognition does.
     func applyRedactions() {
