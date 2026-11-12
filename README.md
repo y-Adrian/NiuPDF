@@ -1,4 +1,4 @@
-# Paperplane
+# NiuPDF
 
 A small native macOS PDF reader built with SwiftUI and PDFKit. It takes inspiration from Skim's reading workflow and PageFlow's native SwiftUI/PDFKit approach; no source code from either project is included.
 
@@ -34,7 +34,7 @@ The interface follows the macOS language setting and is fully English or fully S
 
 Requires macOS 13 or later and Xcode 27. Open `Paperplane.xcodeproj`, select the `Paperplane` scheme, and run it. The Xcode target builds a sandboxed macOS app with access to files explicitly selected by the user.
 
-For command-line development, `swift run` still builds the Swift package executable. That executable is not the App Store sandboxed app. Run the Xcode target when checking sandbox behavior or preparing an app bundle.
+For command-line development, `swift run NiuPDF` builds the Swift package executable. That executable is not the App Store sandboxed app. Run the Xcode target when checking sandbox behavior or preparing an app bundle.
 
 The current bundle identifier, `app.paperplane.reader`, is a development placeholder. Set the identifier to one registered by the publisher before distribution and configure the matching signing team in Xcode.
 

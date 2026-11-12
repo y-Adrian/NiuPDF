@@ -376,7 +376,7 @@ struct DocumentWindowRoot: View {
             .environmentObject(appModel)
             .focusedSceneObject(library)
             .frame(minWidth: 900, minHeight: 620)
-            .navigationTitle(library.fileURL == nil ? L("Paperplane") : library.displayName)
+            .navigationTitle(library.fileURL == nil ? L("NiuPDF") : library.displayName)
             .background(WindowAccessor(library: library))
             .onAppear {
                 appModel.openWindowAction = { openWindow(id: "reader") }

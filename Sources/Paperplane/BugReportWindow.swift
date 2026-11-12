@@ -59,7 +59,7 @@ enum SessionGuard {
         offers = false
         Logger.problems.notice("The last session ended without quitting")
         let alert = NSAlert()
-        alert.messageText = L("Paperplane quit unexpectedly the last time it was used.")
+        alert.messageText = L("NiuPDF quit unexpectedly the last time it was used.")
         alert.informativeText = L("If something went wrong, you can report it. You see the whole report before anything is sent.")
         alert.addButton(withTitle: L("Report a Bug…"))
         alert.addButton(withTitle: L("Not Now"))
@@ -186,7 +186,7 @@ final class BugReportModel: ObservableObject {
     func save() {
         let panel = NSSavePanel()
         panel.allowedContentTypes = [.plainText]
-        panel.nameFieldStringValue = L("Paperplane Bug Report %@.txt", Self.day.string(from: Date()))
+        panel.nameFieldStringValue = L("NiuPDF Bug Report %@.txt", Self.day.string(from: Date()))
         guard panel.runModal() == .OK, let url = panel.url else { return }
         do {
             try report.text.write(to: url, atomically: true, encoding: .utf8)
@@ -198,7 +198,7 @@ final class BugReportModel: ObservableObject {
 
     func sendByEmail() {
         guard let address = BugReportDestination.email else { return }
-        send(report.mailURL(to: address))
+        send(report.mailURL(to: address, subjectPrefix: "[\(L("NiuPDF"))] "))
     }
 
     func openIssuePage() {
@@ -248,7 +248,7 @@ final class BugReportModel: ObservableObject {
         let memory = Double(ProcessInfo.processInfo.physicalMemory) / 1_073_741_824
         let autosaves = UserDefaults.standard.object(forKey: ReaderLibrary.autosaveKey) as? Bool ?? true
         return BugReport.Section(title: "System", lines: [
-            ("Paperplane", "\(version) (\(build))"),
+            (L("NiuPDF"), "\(version) (\(build))"),
             ("macOS", "\(os.majorVersion).\(os.minorVersion).\(os.patchVersion) (\(sysctl("kern.osversion") ?? "unknown"))"),
             ("Mac", "\(sysctl("hw.model") ?? "unknown"), \(architecture), \(String(format: "%.0f", memory)) GB"),
             ("Languages", Locale.preferredLanguages.prefix(3).joined(separator: ", ") + "; app: \(AppLanguage.saved.rawValue)"),

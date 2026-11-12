@@ -83,7 +83,7 @@
 "Follow System" = "跟随系统";
 "General" = "通用";
 "Language" = "语言";
-"Takes effect after Paperplane restarts." = "重新启动 Paperplane 后生效。";
+"Takes effect after NiuPDF restarts." = "重新启动牛PDF后生效。";
 "Restart Now" = "立即重新启动";
 "Annotate" = "标注";
 "Show or hide the annotation tools" = "显示或隐藏标注工具";
@@ -474,14 +474,14 @@
 "Search for the text to redact first." = "请先搜索要涂黑的文字。";
 "Marked %ld matches for redaction." = "已将 %ld 处搜索结果标记为涂黑。";
 "Mark Search Results for Redaction" = "将搜索结果标记为涂黑";
-"Paperplane quit unexpectedly the last time it was used." = "Paperplane 上次使用时意外退出。";
+"NiuPDF quit unexpectedly the last time it was used." = "牛PDF 上次使用时意外退出。";
 "If something went wrong, you can report it. You see the whole report before anything is sent." = "如果遇到了问题，可以报告给开发者。发送前你会看到完整的报告内容。";
 "Report a Bug…" = "报告问题…";
 "Report a Bug" = "报告问题";
 "Not Now" = "以后再说";
 "Don’t ask again" = "不再询问";
 "The report is on the clipboard." = "报告已拷贝到剪贴板。";
-"Paperplane Bug Report %@.txt" = "Paperplane 问题报告 %@.txt";
+"NiuPDF Bug Report %@.txt" = "牛PDF 问题报告 %@.txt";
 "Saved “%@”." = "已存储“%@”。";
 "The description is too long to send this way. Copy or save the report instead." = "描述太长，无法用这种方式发送。请拷贝或存储报告。";
 "The report was too long for a link, so it was shortened. The whole report is on the clipboard; paste it in." = "报告太长，链接中的内容已缩短。完整报告已拷贝到剪贴板，请粘贴进去。";

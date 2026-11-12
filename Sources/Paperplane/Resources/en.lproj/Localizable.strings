@@ -83,7 +83,7 @@
 "Follow System" = "Follow System";
 "General" = "General";
 "Language" = "Language";
-"Takes effect after Paperplane restarts." = "Takes effect after Paperplane restarts.";
+"Takes effect after NiuPDF restarts." = "Takes effect after NiuPDF restarts.";
 "Restart Now" = "Restart Now";
 "Annotate" = "Annotate";
 "Show or hide the annotation tools" = "Show or hide the annotation tools";
@@ -135,7 +135,7 @@
 "· Saved Automatically" = "· Saved Automatically";
 "Save annotations automatically" = "Save annotations automatically";
 "Changes are written to the PDF a moment after each edit, and when you switch apps or quit." = "Changes are written to the PDF a moment after each edit, and when you switch apps or quit.";
-"NiuPDF" = "牛PDF";
+"NiuPDF" = "NiuPDF";
 "New Tab" = "New Tab";
 "New Window" = "New Window";
 "Open Recent" = "Open Recent";
@@ -474,14 +474,14 @@
 "Search for the text to redact first." = "Search for the text to redact first.";
 "Marked %ld matches for redaction." = "Marked %ld matches for redaction.";
 "Mark Search Results for Redaction" = "Mark Search Results for Redaction";
-"Paperplane quit unexpectedly the last time it was used." = "Paperplane quit unexpectedly the last time it was used.";
+"NiuPDF quit unexpectedly the last time it was used." = "NiuPDF quit unexpectedly the last time it was used.";
 "If something went wrong, you can report it. You see the whole report before anything is sent." = "If something went wrong, you can report it. You see the whole report before anything is sent.";
 "Report a Bug…" = "Report a Bug…";
 "Report a Bug" = "Report a Bug";
 "Not Now" = "Not Now";
 "Don’t ask again" = "Don’t ask again";
 "The report is on the clipboard." = "The report is on the clipboard.";
-"Paperplane Bug Report %@.txt" = "Paperplane Bug Report %@.txt";
+"NiuPDF Bug Report %@.txt" = "NiuPDF Bug Report %@.txt";
 "Saved “%@”." = "Saved “%@”.";
 "The description is too long to send this way. Copy or save the report instead." = "The description is too long to send this way. Copy or save the report instead.";
 "The report was too long for a link, so it was shortened. The whole report is on the clipboard; paste it in." = "The report was too long for a link, so it was shortened. The whole report is on the clipboard; paste it in.";

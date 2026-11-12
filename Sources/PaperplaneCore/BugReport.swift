@@ -104,7 +104,7 @@ public struct BugReport: Equatable, Sendable {
     }
 
     /// A `mailto:` link; mail apps take bodies of a few thousand characters.
-    public func mailURL(to address: String, subjectPrefix: String = "[Paperplane] ", limit: Int = 4000) -> (url: URL, isShortened: Bool)? {
+    public func mailURL(to address: String, subjectPrefix: String = "[NiuPDF] ", limit: Int = 4000) -> (url: URL, isShortened: Bool)? {
         guard let body = text(limit: limit) else { return nil }
         var components = URLComponents()
         components.scheme = "mailto"

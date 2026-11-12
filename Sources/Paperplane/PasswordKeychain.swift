@@ -51,7 +51,7 @@ enum PasswordKeychain {
         var item = existing
         item[kSecValueData as String] = Data(password.utf8)
         // Shown in Keychain Access.
-        item[kSecAttrLabel as String] = "Paperplane: " + url.lastPathComponent
+        item[kSecAttrLabel as String] = L("NiuPDF") + ": " + url.lastPathComponent
         guard SecItemAdd(item as CFDictionary, nil) == errSecSuccess else { return false }
         NotificationCenter.default.post(name: didChange, object: nil)
         return true

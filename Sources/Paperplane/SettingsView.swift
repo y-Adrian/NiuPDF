@@ -126,7 +126,7 @@ private struct GeneralSettings: View {
 
             if language != launchLanguage {
                 HStack {
-                    Text(L("Takes effect after Paperplane restarts."))
+                    Text(L("Takes effect after NiuPDF restarts."))
                         .foregroundStyle(.secondary)
                     Spacer()
                     if AppRelauncher.canRelaunch {

@@ -6,7 +6,7 @@ let package = Package(
     defaultLocalization: "en",
     platforms: [.macOS(.v13)],
     products: [
-        .executable(name: "Paperplane", targets: ["Paperplane"]),
+        .executable(name: "NiuPDF", targets: ["Paperplane"]),
         .library(name: "PaperplaneCore", targets: ["PaperplaneCore"]),
         .executable(name: "PDFKitInteropProbe", targets: ["PDFKitInteropProbe"]),
         .executable(name: "PDFKitPerformanceProbe", targets: ["PDFKitPerformanceProbe"])
