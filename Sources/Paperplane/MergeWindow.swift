@@ -1,4 +1,5 @@
 import AppKit
+import OSLog
 import PDFKit
 import PaperplaneCore
 import SwiftUI
@@ -56,7 +57,9 @@ final class MergeModel: ObservableObject {
     static let shared = MergeModel()
 
     @Published var items: [MergeItem] = []
-    @Published var errorMessage: String?
+    @Published var errorMessage: String? {
+        didSet { if let errorMessage { Logger.problems.error("Merge window shown: \(errorMessage, privacy: .public)") } }
+    }
     /// The page size of images; changing it makes their pages again.
     @Published var imagePageSize: ImagePageSize = .a4 {
         didSet { remakeImagePages() }

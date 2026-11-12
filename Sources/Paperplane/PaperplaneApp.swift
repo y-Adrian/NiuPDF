@@ -10,6 +10,8 @@ final class PaperplaneAppDelegate: NSObject, NSApplicationDelegate {
     func applicationWillFinishLaunching(_ notification: Notification) {
         // Start on the start page, not with the windows of the last session.
         UserDefaults.standard.register(defaults: ["NSQuitAlwaysKeepsWindows": false])
+        SessionGuard.start()
+        CrashReports.shared.start()
         // Single-document settings from before windows had their own documents.
         for key in ["lastOpenedPDFBookmark", "lastOpenedPDFPageIndex", "lastOpenedPDFZoomScale"] {
             UserDefaults.standard.removeObject(forKey: key)
@@ -26,6 +28,14 @@ final class PaperplaneAppDelegate: NSObject, NSApplicationDelegate {
                 }
             }
         }
+        // A sheet on the first reader window, once it is on screen.
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1) {
+            SessionGuard.offerReportIfNeeded()
+        }
+    }
+
+    func applicationWillTerminate(_ notification: Notification) {
+        SessionGuard.end()
     }
 
     @MainActor
@@ -60,6 +70,11 @@ struct PaperplaneApp: App {
             BatchWindow()
         }
         .defaultSize(width: 760, height: 480)
+
+        Window(L("Report a Bug"), id: "bugReport") {
+            BugReportWindow()
+        }
+        .windowResizability(.contentSize)
 
         // Adds "Settings…" with ⌘, to the app menu.
         Settings {
@@ -204,6 +219,10 @@ struct ReaderCommands: Commands {
                 .disabled(knownEmpty)
             Divider()
         }
+        CommandGroup(replacing: .help) {
+            Button(L("Report a Bug…")) { BugReportModel.shared.open(from: library) }
+        }
+
         CommandMenu(L("Go")) {
             Button(L("Previous Page")) { library?.stepPage(-1) }
                 .keyboardShortcut(.upArrow, modifiers: [.command, .option])

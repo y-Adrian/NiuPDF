@@ -2,12 +2,13 @@
 
 新会话先读本文；已支持的功能清单见 [FEATURES.md](FEATURES.md)（新增功能后同步更新）。再按需查 [DEVELOPMENT_LOG.md](DEVELOPMENT_LOG.md)（每阶段的决策、根因与验证）和 [ROADMAP.md](ROADMAP.md)。需求见 [产品需求文档.md](产品需求文档.md)。
 
-## 当前状态（2026-11-11，分支 `leading`；3G-1 至 3H-6 均已提交，未推送）
+## 当前状态（2026-11-12，分支 `leading`；3G-1 至 3I-1 已提交，均未推送）
 
-已完成：阅读与搜索（含正则/全词）、标准批注（高亮/下划线/波浪线/删除线/笔记/文本框/手绘/形状，可调颜色、粗细、字体；选中文字后的浮动标注工具条；不透明度与常用样式；文本框背景与边框）、批注编辑（选择、缩放、移动、复制粘贴、批量删除）、页面管理（旋转、删除、插入、移动、提取）、用户书签（⌘B，存于应用、按文件）、批注列表按类型/颜色/作者筛选、加密文档密码可记在钥匙串（设置中可忘记）、设置/更改/移除打开密码与权限限制（受限文件只读并有提示条）、所选文字的系统翻译浮层与朗读、导出时减小文件大小、裁切页面、拆分文档、幻灯片放映、插入图片、网址链接、签名（手写/键入/图片，可存储复用）、水印、页眉页脚与页码、表单填写（存储时修复 PDFKit 写坏的单选组）、导出文字（TXT/RTF/Word）、图片转 PDF（合并窗口）、识别文字（Vision，加不可见文字层）、涂黑（标记后应用，页面重画为图像）、批量处理（压缩/识别文字/页码/水印/导出文字）、合并文档（合并窗口：排序、页码范围、逐页预览）、导出（PDF 副本/扁平化、图片）、多标签页与多窗口、开始页与最近文件、自动存储、中英文界面与设置（⌘,）、打印、常用快捷键。Debug/Release、签名/未签名构建均 0 警告；38 项核心测试通过。
+已完成：阅读与搜索（含正则/全词）、标准批注（高亮/下划线/波浪线/删除线/笔记/文本框/手绘/形状，可调颜色、粗细、字体；选中文字后的浮动标注工具条；不透明度与常用样式；文本框背景与边框）、批注编辑（选择、缩放、移动、复制粘贴、批量删除）、页面管理（旋转、删除、插入、移动、提取）、用户书签（⌘B，存于应用、按文件）、批注列表按类型/颜色/作者筛选、加密文档密码可记在钥匙串（设置中可忘记）、设置/更改/移除打开密码与权限限制（受限文件只读并有提示条）、所选文字的系统翻译浮层与朗读、导出时减小文件大小、裁切页面、拆分文档、幻灯片放映、插入图片、网址链接、签名（手写/键入/图片，可存储复用）、水印、页眉页脚与页码、表单填写（存储时修复 PDFKit 写坏的单选组）、导出文字（TXT/RTF/Word）、图片转 PDF（合并窗口）、识别文字（Vision，加不可见文字层）、涂黑（标记后应用，页面重画为图像）、批量处理（压缩/识别文字/页码/水印/导出文字）、报告问题（帮助菜单；系统与文稿信息、崩溃报告、本次日志；邮件或问题页面，目的地在 Info.plist 中设置；意外退出后提示）、合并文档（合并窗口：排序、页码范围、逐页预览）、导出（PDF 副本/扁平化、图片）、多标签页与多窗口、开始页与最近文件、自动存储、中英文界面与设置（⌘,）、打印、常用快捷键。Debug/Release、签名/未签名构建均 0 警告；42 项核心测试通过。
 
 ## 下一步候选（按优先级）
 
+0. 发布前在 `Configuration/Info.plist` 填上 `PaperplaneSupportEmail` 和/或 `PaperplaneIssuesURL`（留空则报告窗口只能拷贝、存储），并按需修改 `MARKETING_VERSION`。
 1. PDFgear 差距第 2 组已全部完成（3H-1 至 3H-6）。可补：批量处理加密文件、多操作组合；文字导出的页码范围；图片转 PDF 的页边距。
 2. 第 3 组（困难）：修改原有文字（PDFKit 不能改内容流）、PDF 转 Office、创建表单、证书签名、本地 AI 摘要；页内链接（需修复 PDFKit 写坏页面引用的问题，见下方坑）。
 3. U-04 补全：双指旋转手势（P0）；幻灯片的触控板手势翻页。
@@ -62,7 +63,7 @@
 
 ## 诊断日志
 
-打开文件的每一步记在 `Logger.opening`（子系统 `app.paperplane.reader`，类别 `open`）。出问题后运行：
+打开文件的每一步记在 `Logger.opening`（子系统 `app.paperplane.reader`，类别 `open`）；显示给用户的错误与“上次意外退出”记在 `Logger.problems`（类别 `problem`）。“报告问题”窗口会附上本次运行的这些日志。出问题后运行：
 
 ```
 log show --last 10m --info --predicate 'subsystem == "app.paperplane.reader" AND category == "open"'
@@ -93,6 +94,7 @@ log show --last 10m --info --predicate 'subsystem == "app.paperplane.reader" AND
 - 安全输入框只接受第一个合成按键；密码直接设 `stringValue`，再用鼠标点按钮。
 - 撤销测试：应用失去激活时不处理事件，按事件分组的撤销组不会关闭，几步操作会被合成一步；探针里用 `groupsByEvent = false` 并手动开关分组。探针应用失去激活时拖动类测试（移动批注）无法进行。
 - 需要应答 NSAlert 时，更简单的做法是在探针副本里把 `alert.runModal()` 替换成一个按脚本应答的函数（阶段 3F-5 的 `ProbeModal`）。
+- 探针以 `exit()` 结束，不经过正常退出，所以下次启动会弹出“上次意外退出”表单。`run-open.sh` 传入 `-doesNotAskAboutUnexpectedQuits YES` 来关闭它；验证这一提示时设 `PP_ASK_QUIT=NO`。
 - 编辑气泡（`_NSPopoverWindow`）也是窗口的子面板，找浮动工具条时要排除它。
 - `pkill -f`/`pgrep -f` 的模式会匹配到执行它的 shell，写成 `"[u]i/dd/Build/Products"`。
 - 其他阅读器的效果：`gs -sDEVICE=png16m -r144 -o out.png file.pdf`（/usr/local/bin/gs），或用全新 `PDFDocument` 的 `page.draw` 渲染（即“预览”所见）后取像素。
@@ -114,7 +116,7 @@ for target in ["Paperplane","PaperplaneCore"]:
         print(target, lang, "missing:", sorted(code-t), "extra:", sorted(t-code))
 ```
 
-新增工程文件的 ID 已用到 `…065`（Core `PageTools.swift` 050、`PageToolSheets.swift` 051、`Slideshow.swift` 052、`InsertTools.swift` 053、`Signatures.swift` 054、Core `PageMarkLayout.swift` 055、`PageMarks.swift` 056、`PageMarkSheets.swift` 057、Core `ButtonFieldRepair.swift` 058、`FormFields.swift` 059、Core `DocumentConverter.swift` 060、Core `TextRecognition.swift` 061、`TextRecognitionSheet.swift` 062、Core `Redaction.swift` 063、`Redactions.swift` 064、`BatchWindow.swift` 065），下一个从 `100000000000000000000066` / `200000000000000000000066` 开始（共 24 位，注意别多写一个 0）。Core 文件登记在 Core Sources 构建阶段。
+新增工程文件的 ID 已用到 `…067`（Core `PageTools.swift` 050、`PageToolSheets.swift` 051、`Slideshow.swift` 052、`InsertTools.swift` 053、`Signatures.swift` 054、Core `PageMarkLayout.swift` 055、`PageMarks.swift` 056、`PageMarkSheets.swift` 057、Core `ButtonFieldRepair.swift` 058、`FormFields.swift` 059、Core `DocumentConverter.swift` 060、Core `TextRecognition.swift` 061、`TextRecognitionSheet.swift` 062、Core `Redaction.swift` 063、`Redactions.swift` 064、`BatchWindow.swift` 065、Core `BugReport.swift` 066、`BugReportWindow.swift` 067），下一个从 `100000000000000000000068` / `200000000000000000000068` 开始（共 24 位，注意别多写一个 0）。Core 文件登记在 Core Sources 构建阶段。
 
 ### 旧做法：手工编译源码
 

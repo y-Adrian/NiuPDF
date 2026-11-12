@@ -380,6 +380,7 @@ struct DocumentWindowRoot: View {
             .background(WindowAccessor(library: library))
             .onAppear {
                 appModel.openWindowAction = { openWindow(id: "reader") }
+                BugReportModel.shared.openWindowAction = { openWindow(id: "bugReport") }
                 appModel.register(library)
             }
     }

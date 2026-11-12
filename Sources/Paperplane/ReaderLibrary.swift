@@ -265,7 +265,9 @@ final class ReaderLibrary: ObservableObject {
     @Published var bookmarks: [PageBookmark] = []
     /// The page each bookmark belongs to, so bookmarks follow moved pages.
     var bookmarkPages: [UUID: PDFPage] = [:]
-    @Published var errorMessage: String?
+    @Published var errorMessage: String? {
+        didSet { if let errorMessage { Logger.problems.error("Shown: \(errorMessage, privacy: .public)") } }
+    }
     /// Bumped after every annotation edit, undo and redo so views that list or
     /// render annotations (thumbnails, annotation list) refresh.
     @Published private(set) var annotationRevision = 0

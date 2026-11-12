@@ -198,12 +198,15 @@ enum AppRelauncher {
         // be cancelled after the new instance has started.
         guard AppModel.shared.confirmClosingAll() else { return }
         delegate?.skipsUnsavedChangesPrompt = true
+        // The new instance starts before this one quits; it is not a crash.
+        SessionGuard.end()
         let configuration = NSWorkspace.OpenConfiguration()
         configuration.createsNewApplicationInstance = true
         NSWorkspace.shared.openApplication(at: Bundle.main.bundleURL, configuration: configuration) { _, error in
             Task { @MainActor in
                 if let error {
                     (NSApp.delegate as? PaperplaneAppDelegate)?.skipsUnsavedChangesPrompt = false
+                    SessionGuard.start()
                     NSAlert(error: error).runModal()
                 } else {
                     NSApp.terminate(nil)
