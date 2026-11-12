@@ -12,6 +12,8 @@ final class PaperplaneAppDelegate: NSObject, NSApplicationDelegate {
         UserDefaults.standard.register(defaults: ["NSQuitAlwaysKeepsWindows": false])
         SessionGuard.start()
         CrashReports.shared.start()
+        // Before the first window, so it never shows in the other appearance.
+        MainActor.assumeIsolated { AppearanceSetting.shared.apply() }
         // Single-document settings from before windows had their own documents.
         for key in ["lastOpenedPDFBookmark", "lastOpenedPDFPageIndex", "lastOpenedPDFZoomScale"] {
             UserDefaults.standard.removeObject(forKey: key)
@@ -89,6 +91,7 @@ struct ReaderCommands: Commands {
     @FocusedObject private var focusedLibrary: ReaderLibrary?
     @ObservedObject private var appModel = AppModel.shared
     @ObservedObject private var speechReader = SpeechReader.shared
+    @ObservedObject private var appearance = AppearanceSetting.shared
     @Environment(\.openWindow) private var openWindow
 
     /// SwiftUI's focused object can be empty right after tabs change; the key
@@ -217,6 +220,12 @@ struct ReaderCommands: Commands {
             Button(L("Start Slideshow")) { documentLibrary.map(Slideshow.start(for:)) }
                 .keyboardShortcut("p", modifiers: [.command, .option])
                 .disabled(knownEmpty)
+            Divider()
+            Picker(L("Appearance"), selection: $appearance.appearance) {
+                ForEach(AppAppearance.allCases) { choice in
+                    Text(choice.title).tag(choice)
+                }
+            }
             Divider()
         }
         CommandGroup(replacing: .help) {

@@ -38,6 +38,54 @@ enum AppLanguage: String, CaseIterable, Identifiable {
     }
 }
 
+/// Light or dark interface, or the system's. Unlike the language, it applies
+/// at once, to every window.
+enum AppAppearance: String, CaseIterable, Identifiable {
+    case system
+    case light
+    case dark
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .system: L("Follow System")
+        case .light: L("Light")
+        case .dark: L("Dark")
+        }
+    }
+
+    var nsAppearance: NSAppearance? {
+        switch self {
+        case .system: nil
+        case .light: NSAppearance(named: .aqua)
+        case .dark: NSAppearance(named: .darkAqua)
+        }
+    }
+}
+
+/// The saved appearance, shared by the settings and the View menu.
+@MainActor
+final class AppearanceSetting: ObservableObject {
+    static let shared = AppearanceSetting()
+    static let key = "interfaceAppearance"
+
+    @Published var appearance: AppAppearance {
+        didSet {
+            UserDefaults.standard.set(appearance.rawValue, forKey: Self.key)
+            apply()
+        }
+    }
+
+    private init() {
+        appearance = AppAppearance(rawValue: UserDefaults.standard.string(forKey: Self.key) ?? "") ?? .system
+    }
+
+    func apply() {
+        NSApp.appearance = appearance.nsAppearance
+    }
+}
+
 struct SettingsView: View {
     var body: some View {
         TabView {
@@ -52,9 +100,17 @@ private struct GeneralSettings: View {
     /// The language this process is running in, fixed at launch.
     private let launchLanguage = AppLanguage.saved
     @State private var language = AppLanguage.saved
+    @ObservedObject private var appearance = AppearanceSetting.shared
 
     var body: some View {
         Form {
+            Picker(L("Appearance"), selection: $appearance.appearance) {
+                ForEach(AppAppearance.allCases) { choice in
+                    Text(choice.title).tag(choice)
+                }
+            }
+            .pickerStyle(.segmented)
+
             Picker(L("Language"), selection: $language) {
                 ForEach(AppLanguage.allCases) { choice in
                     Text(verbatim: choice.title).tag(choice)
