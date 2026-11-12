@@ -32,7 +32,7 @@ The interface follows the macOS language setting and is fully English or fully S
 
 ## Build and run
 
-Requires macOS 13 or later and Xcode 27. Open `Paperplane.xcodeproj`, select the `Paperplane` scheme, and run it. The Xcode target builds a sandboxed macOS app with access to files explicitly selected by the user.
+Requires macOS 13 or later and Xcode 27. Open `Paperplane.xcodeproj`, select the `NiuPDF` scheme, and run it. The Xcode target builds a sandboxed macOS app with access to files explicitly selected by the user.
 
 For command-line development, `swift run NiuPDF` builds the Swift package executable. That executable is not the App Store sandboxed app. Run the Xcode target when checking sandbox behavior or preparing an app bundle.
 

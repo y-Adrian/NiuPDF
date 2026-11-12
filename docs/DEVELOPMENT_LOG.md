@@ -698,6 +698,14 @@ Checklist 创建：2026-11-13
 - [x] 更新空文档标题、设置提示、问题报告、钥匙串标签和 SwiftPM 可执行产品等用户可见名称：创建 2026-11-13；完成 2026-11-13。
 - [x] 完成 Debug 构建，检查本地化 Info.plist 资源与中英文界面字符串：创建 2026-11-13；完成 2026-11-13。Debug 构建通过，应用包中的 `CFBundleDisplayName` / `CFBundleName` fallback 为 `NiuPDF`，中英文 `InfoPlist.strings` 已打包；两份界面词条各 492 项且键一致。
 
+## 阶段 3A-61：统一 Xcode 归档名称
+
+Checklist 创建：2026-11-13
+
+- [x] 将 Xcode 应用 target/自动 scheme 从 `Paperplane` 改为 `NiuPDF`：创建 2026-11-13；完成 2026-11-13。
+- [x] 更新开发说明，并确认 Xcode 只列出 `NiuPDF` 应用 scheme：创建 2026-11-13；完成 2026-11-13。
+- [x] 用 `NiuPDF` scheme 完成 Debug 构建并复核归档名称来源：创建 2026-11-13；完成 2026-11-13。`xcodebuild -list` 只列出 `NiuPDF` 应用 scheme；Debug 构建成功，产物为 `NiuPDF.app`。
+
 ## 阶段 3A-52：笔记图标就近锚定并错开同行标注
 
 Checklist 创建：2026-10-18
