@@ -17,9 +17,11 @@
 			</array>
 		</dict>
 	</array>
-	<key>PaperplaneSupportEmail</key>
-	<string></string>
+	<key>CFBundleIconFile</key>
+	<string>AppIcon</string>
 	<key>PaperplaneIssuesURL</key>
+	<string></string>
+	<key>PaperplaneSupportEmail</key>
 	<string></string>
 </dict>
 </plist>
