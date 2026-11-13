@@ -190,6 +190,12 @@ final class ReaderLibrary: ObservableObject {
     @Published var fileURL: URL?
     @Published var currentPageIndex = 0
     @Published var pageCount = 0
+    /// True for the next `currentPageIndex` change that came from a direct
+    /// navigation (menu, thumbnail, search, bookmark), so the thumbnail sidebar
+    /// animates to it; scroll-driven page changes leave it false and the sidebar
+    /// follows instantly instead. Not @Published: it is only read by the
+    /// sidebar's onChange, which is driven by `currentPageIndex`.
+    var animatesSidebarReveal = false
     @Published var zoomScale: CGFloat = 1
     @Published var searchText = ""
     @Published var searchResults: [PDFSelection] = []
@@ -545,6 +551,7 @@ final class ReaderLibrary: ObservableObject {
         let index = min(max(oneBasedPage - 1, 0), document.pageCount - 1)
         guard let page = document.page(at: index) else { return }
         pdfView?.go(to: page)
+        animatesSidebarReveal = true
         currentPageIndex = index
         if let fileURL { ReadingPositions.record(page: index, for: fileURL) }
     }
@@ -730,8 +737,18 @@ final class ReaderLibrary: ObservableObject {
 
     private func showCurrentSearchResult() {
         guard searchResults.indices.contains(searchResultIndex), let pdfView else { return }
-        pdfView.setCurrentSelection(searchResults[searchResultIndex], animate: true)
-        pdfView.go(to: searchResults[searchResultIndex])
+        let selection = searchResults[searchResultIndex]
+        pdfView.setCurrentSelection(selection, animate: true)
+        pdfView.go(to: selection)
+        // Reveal the match in the sidebar right away; the pageChanged
+        // notification would otherwise update the page a beat later.
+        if let page = selection.pages.first, let document {
+            let index = document.index(for: page)
+            if index != NSNotFound {
+                animatesSidebarReveal = true
+                updateCurrentPage(index)
+            }
+        }
     }
 
     // MARK: - Text markup
@@ -1775,6 +1792,7 @@ final class ReaderLibrary: ObservableObject {
     func reveal(_ annotation: PDFAnnotation) {
         guard let page = annotation.page, let document, let pdfView else { return }
         pdfView.go(to: annotation.bounds.insetBy(dx: -40, dy: -40), on: page)
+        animatesSidebarReveal = true
         updateCurrentPage(document.index(for: page))
     }
 

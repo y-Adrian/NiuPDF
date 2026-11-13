@@ -664,7 +664,15 @@ struct ThumbnailSidebar: View {
             .background(Color(nsColor: .controlBackgroundColor))
             .onPreferenceChange(RowHeightKey.self) { rowHeights = $0 }
             .onChange(of: library.currentPageIndex) { value in
-                withAnimation(.easeInOut(duration: 0.18)) { proxy.scrollTo(value, anchor: .center) }
+                // A direct navigation animates the sidebar to the new page;
+                // scroll-driven page changes follow instantly, so fast continuous
+                // scrolling no longer restarts a 0.18s animation on every crossing.
+                if library.animatesSidebarReveal {
+                    library.animatesSidebarReveal = false
+                    withAnimation(.easeInOut(duration: 0.18)) { proxy.scrollTo(value, anchor: .center) }
+                } else {
+                    proxy.scrollTo(value, anchor: .center)
+                }
             }
         }
     }
