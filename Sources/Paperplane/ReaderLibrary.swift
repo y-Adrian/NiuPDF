@@ -340,7 +340,10 @@ final class ReaderLibrary: ObservableObject {
         let center = NotificationCenter.default
         // Switching to another app is a natural moment to have everything on disk.
         observers.append(center.addObserver(forName: NSApplication.willResignActiveNotification, object: nil, queue: .main) { [weak self] _ in
-            MainActor.assumeIsolated { self?.autosaveNow() }
+            MainActor.assumeIsolated {
+                self?.autosaveNow()
+                ReadingPositions.flush()
+            }
         })
         // PDFKit fills in form fields itself; see `formFieldDidChange`.
         observers.append(center.addObserver(forName: Self.formDidChangeValue, object: nil, queue: .main) { [weak self] note in
@@ -374,6 +377,7 @@ final class ReaderLibrary: ObservableObject {
         autosaveTask?.cancel()
         searchTask?.cancel()
         exportTask?.cancel()
+        ReadingPositions.flush()
         scopedURL?.stopAccessingSecurityScopedResource()
         scopedURL = nil
     }
@@ -881,7 +885,7 @@ final class ReaderLibrary: ObservableObject {
         }
         pendingCreation = (created, edit)
         annotationRevision += 1
-        refreshPDFView()
+        refreshPDFView(on: [page])
         onEditAnnotation?(created)
     }
 
@@ -902,7 +906,7 @@ final class ReaderLibrary: ObservableObject {
             if text.isEmpty {
                 pending.edit.revert()
                 annotationRevision += 1
-                refreshPDFView()
+                refreshPDFView(on: pending.edit.pages)
             } else {
                 storeNote(text, for: annotation)
                 commit(pending.edit, actionName: L("Add Note"))
@@ -925,7 +929,7 @@ final class ReaderLibrary: ObservableObject {
             target.setNote(annotation, to: previous)
         }
         pdfView?.undoManager?.setActionName(text.isEmpty ? L("Delete Note") : L("Edit Note"))
-        annotationsDidChange()
+        annotationsDidChange(on: annotation.page.map { [$0] })
     }
 
     func setColor(_ annotation: PDFAnnotation, to color: MarkupColor) {
@@ -941,7 +945,7 @@ final class ReaderLibrary: ObservableObject {
             // Part of a creation step that is not committed yet.
             applyDisplayColor(nsColor, to: annotation)
             annotationRevision += 1
-            refreshPDFView()
+            refreshPDFView(on: annotation.page.map { [$0] })
             return
         }
         setColor(annotation, to: nsColor)
@@ -958,14 +962,14 @@ final class ReaderLibrary: ObservableObject {
         applyDisplayColor(current.withAlphaComponent(opacity), to: annotation)
         if pendingCreation?.annotation === annotation {
             annotationRevision += 1
-            refreshPDFView()
+            refreshPDFView(on: annotation.page.map { [$0] })
             return
         }
         pdfView?.undoManager?.registerUndo(withTarget: self) { target in
             target.setOpacity(annotation, to: previous)
         }
         pdfView?.undoManager?.setActionName(L("Change Opacity"))
-        annotationsDidChange()
+        annotationsDidChange(on: annotation.page.map { [$0] })
     }
 
     /// The tool whose color and opacity defaults an annotation's kind uses.
@@ -981,7 +985,7 @@ final class ReaderLibrary: ObservableObject {
             target.setColor(annotation, to: previous)
         }
         pdfView?.undoManager?.setActionName(L("Change Color"))
-        annotationsDidChange()
+        annotationsDidChange(on: annotation.page.map { [$0] })
     }
 
     func deleteAnnotation(_ annotation: PDFAnnotation) {
@@ -990,7 +994,7 @@ final class ReaderLibrary: ObservableObject {
             pendingCreation = nil
             pending.edit.revert()
             annotationRevision += 1
-            refreshPDFView()
+            refreshPDFView(on: pending.edit.pages)
             return
         }
         guard let page = annotation.page else { return }
@@ -1109,7 +1113,7 @@ final class ReaderLibrary: ObservableObject {
         handOverToOverlay(note)
         pendingCreation = (note, edit)
         annotationRevision += 1
-        refreshPDFView()
+        refreshPDFView(on: [page])
         onEditAnnotation?(note)
     }
 
@@ -1167,7 +1171,7 @@ final class ReaderLibrary: ObservableObject {
             if isEmpty {
                 pending.edit.revert()
                 annotationRevision += 1
-                refreshPDFView()
+                refreshPDFView(on: pending.edit.pages)
             } else {
                 box.contents = text
                 box.bounds = bounds
@@ -1192,7 +1196,7 @@ final class ReaderLibrary: ObservableObject {
             target.setTextBox(box, text: previousText, bounds: previousBounds)
         }
         pdfView?.undoManager?.setActionName(L("Edit Text Box"))
-        annotationsDidChange()
+        annotationsDidChange(on: box.page.map { [$0] })
     }
 
     /// Adds a freehand drawing through page points.
@@ -1286,7 +1290,7 @@ final class ReaderLibrary: ObservableObject {
             target.setStrokeWidth(annotation, to: previous)
         }
         pdfView?.undoManager?.setActionName(L("Change Line Width"))
-        annotationsDidChange()
+        annotationsDidChange(on: annotation.page.map { [$0] })
     }
 
     static let textBoxBorderWidths: [CGFloat] = [0, 1, 2, 3]
@@ -1322,14 +1326,14 @@ final class ReaderLibrary: ObservableObject {
         textBoxBackground = color
         box.color = color?.nsColor ?? .clear
         if pendingCreation?.annotation === box {
-            refreshPDFView()
+            refreshPDFView(on: box.page.map { [$0] } ?? [])
             return
         }
         pdfView?.undoManager?.registerUndo(withTarget: self) { target in
             target.setBackground(of: box, to: previous)
         }
         pdfView?.undoManager?.setActionName(L("Change Background"))
-        annotationsDidChange()
+        annotationsDidChange(on: box.page.map { [$0] })
     }
 
     func setBorderWidth(of box: PDFAnnotation, to width: CGFloat) {
@@ -1340,14 +1344,14 @@ final class ReaderLibrary: ObservableObject {
         box.border = Self.border(width: width)
         Self.stampTextStyle(of: box)
         if pendingCreation?.annotation === box {
-            refreshPDFView()
+            refreshPDFView(on: box.page.map { [$0] })
             return
         }
         pdfView?.undoManager?.registerUndo(withTarget: self) { target in
             target.setBorderWidth(of: box, to: previous)
         }
         pdfView?.undoManager?.setActionName(L("Change Border"))
-        annotationsDidChange()
+        annotationsDidChange(on: box.page.map { [$0] })
     }
 
     func setFont(of box: PDFAnnotation, family: String?, size: CGFloat) {
@@ -1360,14 +1364,14 @@ final class ReaderLibrary: ObservableObject {
         Self.stampTextStyle(of: box)
         if pendingCreation?.annotation === box {
             // Part of a creation step that is not committed yet.
-            refreshPDFView()
+            refreshPDFView(on: box.page.map { [$0] })
             return
         }
         pdfView?.undoManager?.registerUndo(withTarget: self) { target in
             target.setFont(of: box, family: previous.family, size: previous.size)
         }
         pdfView?.undoManager?.setActionName(L("Change Font"))
-        annotationsDidChange()
+        annotationsDidChange(on: box.page.map { [$0] })
     }
 
     /// Annotations the select tool can drag to a new place.
@@ -1564,6 +1568,13 @@ final class ReaderLibrary: ObservableObject {
         var removed: [(PDFAnnotation, PDFPage)] = []
 
         var isEmpty: Bool { added.isEmpty && removed.isEmpty }
+        var pages: [PDFPage] {
+            var seen = Set<ObjectIdentifier>()
+            return (added + removed).compactMap { entry in
+                let page = entry.1
+                return seen.insert(ObjectIdentifier(page)).inserted ? page : nil
+            }
+        }
 
         func revert() {
             for (annotation, page) in added { page.removeAnnotation(annotation) }
@@ -1599,7 +1610,7 @@ final class ReaderLibrary: ObservableObject {
     private func commit(_ edit: AnnotationEdit, actionName: String) {
         guard !edit.isEmpty else { return }
         registerAnnotationUndo(edit, actionName: actionName)
-        annotationsDidChange()
+        annotationsDidChange(on: edit.pages)
     }
 
     private func registerAnnotationUndo(_ edit: AnnotationEdit, actionName: String) {
@@ -1608,14 +1619,14 @@ final class ReaderLibrary: ObservableObject {
             edit.revert()
             // Registering the inverse while undoing makes it the redo step.
             target.registerAnnotationUndo(AnnotationEdit(added: edit.removed, removed: edit.added), actionName: actionName)
-            target.annotationsDidChange()
+            target.annotationsDidChange(on: edit.pages)
         }
         undoManager.setActionName(actionName)
     }
 
     /// Every document edit, annotation or page, ends here: it counts the change
     /// for undo-aware "edited", refreshes views and schedules autosave.
-    func annotationsDidChange() {
+    func annotationsDidChange(on pages: [PDFPage]? = nil) {
         if pdfView?.undoManager?.isUndoing == true {
             changeCount -= 1
         } else if pdfView?.undoManager?.isRedoing == true {
@@ -1630,7 +1641,7 @@ final class ReaderLibrary: ObservableObject {
         if selectedAnnotations.contains(where: { $0.page == nil }) {
             selectedAnnotations.removeAll { $0.page == nil }
         }
-        refreshPDFView()
+        refreshPDFView(on: pages)
         scheduleAutosave()
     }
 
@@ -1675,9 +1686,18 @@ final class ReaderLibrary: ObservableObject {
         }
     }
 
-    private func refreshPDFView() {
-        pdfView?.setNeedsDisplay(pdfView?.bounds ?? .zero)
-        (pdfView as? AnnotationOverlayHost)?.refreshAnnotationOverlays()
+    private func refreshPDFView(on pages: [PDFPage]? = nil) {
+        guard let pdfView else { return }
+        if let pages, !pages.isEmpty {
+            for page in pages {
+                let rect = pdfView.convert(page.bounds(for: .mediaBox), from: page).insetBy(dx: -8, dy: -8)
+                pdfView.setNeedsDisplay(rect.intersection(pdfView.bounds))
+            }
+            (pdfView as? AnnotationOverlayHost)?.refreshAnnotationOverlays(on: pages)
+        } else {
+            pdfView.setNeedsDisplay(pdfView.bounds)
+            (pdfView as? AnnotationOverlayHost)?.refreshAnnotationOverlays()
+        }
     }
 
     // MARK: - Annotation list

@@ -26,6 +26,16 @@ struct RecentDocument: Identifiable, Codable, Equatable {
 enum ReadingPositions {
     private static let key = "readingPositions"
     private static let limit = 200
+    /// How long to wait after the last change before writing to disk, so a zoom
+    /// or scroll gesture does not serialize and write the whole table on every
+    /// frame. `position(for:)` reads from the in-memory cache, so a pending
+    /// update is never observed as stale.
+    private static let flushDelay: UInt64 = 500_000_000
+
+    /// In-memory source of truth, loaded from disk once. Reads always see the
+    /// latest value; writes to UserDefaults are debounced.
+    private static var cache: [String: [String: Double]]?
+    private static var flushTask: Task<Void, Never>?
 
     static func position(for url: URL) -> (page: Int, zoom: CGFloat?)? {
         guard let entry = all()[url.standardizedFileURL.path] else { return nil }
@@ -48,11 +58,33 @@ enum ReadingPositions {
             let oldest = positions.sorted { ($0.value["at"] ?? 0) < ($1.value["at"] ?? 0) }.prefix(positions.count - limit)
             for (path, _) in oldest { positions[path] = nil }
         }
-        UserDefaults.standard.set(positions, forKey: key)
+        cache = positions
+        scheduleFlush()
+    }
+
+    /// Writes any pending changes to disk immediately. Called on app resign,
+    /// window close and termination so a debounced update is never lost.
+    static func flush() {
+        flushTask?.cancel()
+        flushTask = nil
+        guard let cache else { return }
+        UserDefaults.standard.set(cache, forKey: key)
+    }
+
+    private static func scheduleFlush() {
+        flushTask?.cancel()
+        flushTask = Task { @MainActor in
+            try? await Task.sleep(nanoseconds: flushDelay)
+            guard !Task.isCancelled else { return }
+            flush()
+        }
     }
 
     private static func all() -> [String: [String: Double]] {
-        UserDefaults.standard.dictionary(forKey: key) as? [String: [String: Double]] ?? [:]
+        if let cache { return cache }
+        let loaded = UserDefaults.standard.dictionary(forKey: key) as? [String: [String: Double]] ?? [:]
+        cache = loaded
+        return loaded
     }
 }
 

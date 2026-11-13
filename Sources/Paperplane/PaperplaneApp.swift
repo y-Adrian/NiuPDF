@@ -38,6 +38,7 @@ final class PaperplaneAppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationWillTerminate(_ notification: Notification) {
         SessionGuard.end()
+        ReadingPositions.flush()
     }
 
     @MainActor

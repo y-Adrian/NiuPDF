@@ -19,6 +19,7 @@ struct CommentMarker {
 @MainActor
 protocol AnnotationOverlayHost: AnyObject {
     func refreshAnnotationOverlays()
+    func refreshAnnotationOverlays(on pages: [PDFPage])
     func editAnnotation(_ annotation: PDFAnnotation)
 }
 
@@ -168,6 +169,14 @@ final class AnnotationOverlayProvider: NSObject, PDFPageOverlayViewProvider {
     @MainActor
     func refreshAll() {
         for overlay in overlays.allObjects { overlay.refresh() }
+    }
+
+    @MainActor
+    func refresh(on pages: [PDFPage]) {
+        let pageIDs = Set(pages.map(ObjectIdentifier.init))
+        for overlay in overlays.allObjects where pageIDs.contains(ObjectIdentifier(overlay.page)) {
+            overlay.refresh()
+        }
     }
 
     @MainActor

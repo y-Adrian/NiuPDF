@@ -72,6 +72,10 @@ struct PDFCanvas: NSViewRepresentable {
 
     final class Coordinator: NSObject {
         private let library: ReaderLibrary
+        /// Set while a coalesced scale update is queued, so the burst of
+        /// `PDFViewScaleChanged` notifications a pinch or scroll-zoom emits is
+        /// handled once per display pass instead of once per notification.
+        private var scaleRefreshScheduled = false
         init(library: ReaderLibrary) { self.library = library }
 
         @objc func pageChanged(_ notification: Notification) {
@@ -87,10 +91,18 @@ struct PDFCanvas: NSViewRepresentable {
 
         @objc func scaleChanged(_ notification: Notification) {
             guard let view = notification.object as? PDFView else { return }
-            Task { @MainActor in
-                library.updateZoomScale(view.scaleFactor)
-                // Note icons keep a constant on-screen size, so redraw them for the new scale.
-                (view as? AnnotationOverlayHost)?.refreshAnnotationOverlays()
+            // The flag blocks repeats until the queued task runs, so zoomScale
+            // (a @Published value) changes once per pass and SwiftUI does not
+            // re-render the whole window on every notification.
+            guard !scaleRefreshScheduled else { return }
+            scaleRefreshScheduled = true
+            Task { @MainActor [weak self] in
+                guard let self else { return }
+                self.scaleRefreshScheduled = false
+                self.library.updateZoomScale(view.scaleFactor)
+                // Note icons keep a constant on-screen size, so redraw them for
+                // the new scale — but only the pages actually on screen.
+                (view as? AnnotationOverlayHost)?.refreshAnnotationOverlays(on: view.visiblePages)
             }
         }
     }
@@ -209,6 +221,10 @@ private final class MarkupPDFView: PDFView, AnnotationOverlayHost {
 
     func refreshAnnotationOverlays() {
         overlayProvider.refreshAll()
+    }
+
+    func refreshAnnotationOverlays(on pages: [PDFPage]) {
+        overlayProvider.refresh(on: pages)
     }
 
     func toolDidChange() {
