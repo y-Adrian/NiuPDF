@@ -69,6 +69,36 @@ final class SafePDFFileStoreTests: XCTestCase {
         XCTAssertEqual(try PDFFileRevision(url: target), newRevision)
     }
 
+    func testSaveDataWritesAndReportsRevision() throws {
+        let target = temporaryDirectory.appendingPathComponent("copy.pdf")
+        try FileManager.default.copyItem(at: fixture("existing-annotation.pdf"), to: target)
+        let (document, revision) = try SafePDFFileStore.read(from: target)
+        let marker = PDFAnnotation(bounds: CGRect(x: 60, y: 60, width: 50, height: 15), forType: .underline, withProperties: nil)
+        marker.contents = "data path probe"
+        document.page(at: 0)?.addAnnotation(marker)
+        let data = try XCTUnwrap(document.dataRepresentation())
+
+        let newRevision = try SafePDFFileStore.save(data: data, to: target, expectedRevision: revision, pageCount: document.pageCount)
+
+        let reopened = try XCTUnwrap(PDFDocument(url: target))
+        XCTAssertEqual(reopened.page(at: 0)?.annotations.filter { $0.type == "Underline" }.count, 1)
+        XCTAssertEqual(try PDFFileRevision(url: target), newRevision)
+    }
+
+    func testSaveDataRefusesToOverwriteExternalChange() throws {
+        let target = temporaryDirectory.appendingPathComponent("copy.pdf")
+        try FileManager.default.copyItem(at: fixture("existing-annotation.pdf"), to: target)
+        let (document, revision) = try SafePDFFileStore.read(from: target)
+        let data = try XCTUnwrap(document.dataRepresentation())
+        let outsideChange = Data("external writer change".utf8)
+        try outsideChange.write(to: target, options: .atomic)
+
+        XCTAssertThrowsError(try SafePDFFileStore.save(data: data, to: target, expectedRevision: revision, pageCount: document.pageCount)) { error in
+            XCTAssertEqual(error as? SafePDFFileStoreError, .externallyChanged)
+        }
+        XCTAssertEqual(try Data(contentsOf: target), outsideChange)
+    }
+
     private func fixture(_ name: String) -> URL {
         URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
             .appendingPathComponent("TestCorpus/fixtures/\(name)")

@@ -9,6 +9,12 @@ public struct PDFFileRevision: Equatable, Sendable {
         digest = try Self.digest(of: url)
     }
 
+    /// The revision of an in-memory PDF byte stream, so a save can report the
+    /// new revision without reading the just-written file back from disk.
+    fileprivate init(data: Data) {
+        digest = Data(SHA256.hash(data: data))
+    }
+
     fileprivate static func digest(of url: URL) throws -> Data {
         let handle = try FileHandle(forReadingFrom: url)
         defer { try? handle.close() }
@@ -63,9 +69,19 @@ public enum SafePDFFileStore {
         coordinator.coordinate(readingItemAt: url, options: [], error: &coordinationError) { coordinatedURL in
             do {
                 let revision = try PDFFileRevision(url: coordinatedURL)
-                guard let document = PDFDocument(url: coordinatedURL), document.pageCount > 0 else {
+                let rawData = try Data(contentsOf: coordinatedURL)
+                // Drop a tagged PDF's structure so PDFKit does not re-resolve it
+                // on every save; see StructureStripper. Fall back to the raw
+                // bytes when the file is not tagged or cannot be stripped.
+                let document: PDFDocument
+                if let stripped = StructureStripper.strip(rawData), let doc = PDFDocument(data: stripped) {
+                    document = doc
+                } else if let doc = PDFDocument(data: rawData) {
+                    document = doc
+                } else {
                     throw SafePDFFileStoreError.unreadablePDF
                 }
+                guard document.pageCount > 0 else { throw SafePDFFileStoreError.unreadablePDF }
                 result = (document, revision)
             } catch {
                 accessError = error
@@ -142,6 +158,87 @@ public enum SafePDFFileStore {
                 }
                 temporaryURL = nil
                 updatedRevision = try PDFFileRevision(url: coordinatedURL)
+            } catch {
+                operationError = error
+            }
+            if let temporaryURL { try? FileManager.default.removeItem(at: temporaryURL) }
+        }
+
+        if let coordinationError {
+            throw SafePDFFileStoreError.coordinationFailed("\(coordinationError.domain) (\(coordinationError.code)): \(coordinationError.localizedDescription)")
+        }
+        if let operationError { throw operationError }
+        guard let updatedRevision else { throw SafePDFFileStoreError.unreadablePDF }
+        return updatedRevision
+    }
+
+    /// Saves an already-serialized PDF byte stream with the same coordination,
+    /// revision checking and verified replacement as `save(_:to:...)`, but
+    /// without touching a `PDFDocument`, so it can run on a background thread.
+    /// The caller serializes the document on the main thread first.
+    @discardableResult
+    public static func save(
+        data: Data,
+        to url: URL,
+        expectedRevision: PDFFileRevision,
+        pageCount: Int,
+        repairingButtons buttons: [ButtonWidgetState] = []
+    ) throws -> PDFFileRevision {
+        var updatedRevision: PDFFileRevision?
+        var operationError: Error?
+        let coordinator = NSFileCoordinator(filePresenter: nil)
+        var coordinationError: NSError?
+
+        coordinator.coordinate(writingItemAt: url, options: .forReplacing, error: &coordinationError) { coordinatedURL in
+            var temporaryURL: URL?
+            do {
+                guard try PDFFileRevision(url: coordinatedURL) == expectedRevision else {
+                    throw SafePDFFileStoreError.externallyChanged
+                }
+
+                let repaired = ButtonFieldRepair.repair(data, buttons: buttons) ?? data
+                // Verify the bytes reopen as a PDF with the right number of
+                // pages before the original is touched.
+                guard let reopened = PDFDocument(data: repaired), reopened.pageCount == pageCount else {
+                    throw SafePDFFileStoreError.invalidTemporaryCopy
+                }
+
+                let beside = coordinatedURL.deletingLastPathComponent()
+                    .appendingPathComponent(".\(coordinatedURL.lastPathComponent).paperplane-\(UUID().uuidString).tmp.pdf")
+                let replacesAtomically: Bool
+                let candidate: URL
+                do {
+                    try repaired.write(to: beside, options: .atomic)
+                    replacesAtomically = true
+                    candidate = beside
+                } catch {
+                    // The App Sandbox grants access to the chosen file only,
+                    // so write to the temporary folder and replace in place.
+                    replacesAtomically = false
+                    candidate = FileManager.default.temporaryDirectory.appendingPathComponent("paperplane-\(UUID().uuidString).pdf")
+                    try repaired.write(to: candidate, options: .atomic)
+                }
+                temporaryURL = candidate
+
+                // Recheck immediately before replacement while the coordinated
+                // write claim is held, in case the writer changed the source.
+                guard try PDFFileRevision(url: coordinatedURL) == expectedRevision else {
+                    throw SafePDFFileStoreError.externallyChanged
+                }
+                if replacesAtomically {
+                    _ = try FileManager.default.replaceItemAt(coordinatedURL, withItemAt: candidate)
+                } else {
+                    do {
+                        try overwrite(coordinatedURL, withContentsOf: candidate)
+                    } catch {
+                        // The original may be partly written; keep the verified copy.
+                        temporaryURL = nil
+                        throw SafePDFFileStoreError.inPlaceWriteFailed(keptCopy: candidate.path)
+                    }
+                    try? FileManager.default.removeItem(at: candidate)
+                }
+                temporaryURL = nil
+                updatedRevision = PDFFileRevision(data: repaired)
             } catch {
                 operationError = error
             }

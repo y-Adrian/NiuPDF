@@ -309,6 +309,16 @@ final class ReaderLibrary: ObservableObject {
     }
     @Published private(set) var autosaveState: AutosaveState?
     private var autosaveTask: Task<Void, Never>?
+    /// Serializes file writes so a manual save waits for an in-flight autosave
+    /// and no two writes touch the file at once.
+    private let saveQueue = DispatchQueue(label: "app.paperplane.reader.save", qos: .utility)
+    /// Bumped whenever a save starts; an autosave whose result arrives after a
+    /// newer save has started is discarded so it cannot clobber the revision.
+    private var saveToken = 0
+    /// True while a background autosave write is in flight.
+    private var isSavingInBackground = false
+    /// True while a save is writing, so the status bar can show progress.
+    @Published private(set) var isSaving = false
     private static let autosaveDelay: UInt64 = 1_500_000_000
     private var isAutosavePaused: Bool {
         if case .paused = autosaveState { return true }
@@ -538,7 +548,7 @@ final class ReaderLibrary: ObservableObject {
         alert.addButton(withTitle: L("Don’t Save"))
         switch alert.runModal() {
         case .alertFirstButtonReturn:
-            return save()
+            return (try? writeDocument()) != nil
         case .alertThirdButtonReturn:
             return true
         default:
@@ -559,7 +569,9 @@ final class ReaderLibrary: ObservableObject {
     func updateCurrentPage(_ index: Int) {
         guard document?.pageCount ?? 0 > 0 else { return }
         let safeIndex = min(max(index, 0), (document?.pageCount ?? 1) - 1)
-        currentPageIndex = safeIndex
+        // Assigning the same value still publishes objectWillChange and
+        // re-renders the whole window, so only touch the property on a change.
+        if currentPageIndex != safeIndex { currentPageIndex = safeIndex }
         if let fileURL { ReadingPositions.record(page: safeIndex, for: fileURL) }
     }
 
@@ -650,7 +662,7 @@ final class ReaderLibrary: ObservableObject {
 
     func updateZoomScale(_ scale: CGFloat) {
         guard scale.isFinite, scale > 0 else { return }
-        zoomScale = scale
+        if zoomScale != scale { zoomScale = scale }
         if let fileURL { ReadingPositions.record(zoom: scale, for: fileURL) }
     }
 
@@ -1693,14 +1705,88 @@ final class ReaderLibrary: ObservableObject {
             scheduleAutosave()
             return
         }
-        do {
-            try writeDocument()
-            autosaveState = .saved
-        } catch {
-            // Say it once; repeating the alert on every edit would be worse.
-            autosaveState = .paused(error.localizedDescription)
-            errorMessage = L("Autosave paused: %@ Save with ⌘S once the problem is resolved.", error.localizedDescription)
+        performBackgroundSave()
+    }
+
+    /// Serializes the document off the main thread (the expensive part for
+    /// large or tagged PDFs), then writes and verifies it, so neither autosave
+    /// nor ⌘S freezes the interface.
+    private func performBackgroundSave() {
+        guard !isSavingInBackground else { return }
+        guard let document, let fileURL, let fileRevision else { return }
+        if hasUnsavedChanges, !canAnnotate || !canChangePages {
+            failAutosave(DocumentProtectionError.restricted)
+            return
         }
+        saveToken += 1
+        let token = saveToken
+        let writtenChangeCount = changeCount
+        let buttons = buttonWidgetStates()
+        let pageCount = document.pageCount
+        let expectedRevision = fileRevision
+        // Toggle annotations to native form on the main thread, then serialize
+        // and write off the main thread; restore on the main thread after.
+        let restore = prepareNativeNotesForSave()
+        isSavingInBackground = true
+        isSaving = true
+        saveQueue.async { [weak self] in
+            do {
+                guard let data = document.dataRepresentation() else { throw SafePDFFileStoreError.unableToWriteTemporary }
+                let revision = try SafePDFFileStore.save(data: data, to: fileURL, expectedRevision: expectedRevision,
+                                                         pageCount: pageCount, repairingButtons: buttons)
+                DispatchQueue.main.async {
+                    restore()
+                    self?.finishAutosave(revision: revision, writtenChangeCount: writtenChangeCount, token: token)
+                }
+            } catch {
+                DispatchQueue.main.async {
+                    restore()
+                    self?.failAutosave(error)
+                }
+            }
+        }
+    }
+
+    /// Toggles the document's annotations to their native form so a later
+    /// serialization writes them in standard form. Returns a closure that
+    /// restores them; call it on the main thread after serialization.
+    private func prepareNativeNotesForSave() -> () -> Void {
+        let pending = pendingCreation?.edit
+        pending?.revert()
+        // Snapshot the exact annotations now so the restore toggles the same
+        // set, even if edits arrive while the save is running in the background.
+        let hiddenNotes = Array(hiddenNativeAnnotations.values)
+        let notedMarkup = Array(markupNotes.values)
+        for note in hiddenNotes { note.shouldDisplay = true }
+        for (annotation, text) in notedMarkup { annotation.contents = text.isEmpty ? nil : text }
+        return {
+            for note in hiddenNotes { note.shouldDisplay = false }
+            for (annotation, _) in notedMarkup { annotation.contents = nil }
+            pending?.apply()
+        }
+    }
+
+    private func finishAutosave(revision: PDFFileRevision, writtenChangeCount: Int, token: Int) {
+        isSavingInBackground = false
+        isSaving = false
+        guard token == saveToken else { return }   // a newer save superseded this one
+        self.fileRevision = revision
+        if changeCount == writtenChangeCount {
+            savedChangeCount = changeCount
+            hasUnsavedChanges = false
+            autosaveState = .saved
+        } else {
+            // Edits arrived while the write was in flight; save the newer state.
+            scheduleAutosave()
+        }
+    }
+
+    private func failAutosave(_ error: Error) {
+        isSavingInBackground = false
+        isSaving = false
+        // Say it once; repeating the alert on every edit would be worse.
+        autosaveState = .paused(error.localizedDescription)
+        errorMessage = L("Autosave paused: %@ Save with ⌘S once the problem is resolved.", error.localizedDescription)
     }
 
     private func refreshPDFView(on pages: [PDFPage]? = nil) {
@@ -2029,18 +2115,11 @@ final class ReaderLibrary: ObservableObject {
         }
     }
 
-    @discardableResult
-    func save() -> Bool {
+    func save() {
         commitPendingEdits?()
-        do {
-            try writeDocument()
-            // A manual save that succeeds resumes autosave.
-            autosaveState = isAutosaveEnabled ? .saved : nil
-            return true
-        } catch {
-            errorMessage = error.localizedDescription
-            return false
-        }
+        guard hasUnsavedChanges, document != nil else { return }
+        // Save off the main thread; the status bar shows "Saving…" meanwhile.
+        performBackgroundSave()
     }
 
     /// Records how the opened file is protected. Restrictions show only without
@@ -2088,6 +2167,8 @@ final class ReaderLibrary: ObservableObject {
         commitPendingEdits?()
         guard let document, let fileURL, let fileRevision else { throw SafePDFFileStoreError.unreadablePDF }
         autosaveTask?.cancel()
+        saveToken += 1
+        saveQueue.sync {}   // wait for any in-flight autosave write before rewriting
         self.fileRevision = try withNativeNotesRestored {
             try SafePDFFileStore.save(document, to: fileURL, expectedRevision: fileRevision, writeOptions: options,
                                       repairingButtons: buttonWidgetStates())
@@ -2102,13 +2183,31 @@ final class ReaderLibrary: ObservableObject {
         guard let document, let fileURL, let fileRevision else { throw SafePDFFileStoreError.unreadablePDF }
         // PDFKit leaves out annotation and page changes that the document's
         // restrictions forbid, so refuse rather than lose them silently.
-        if changeCount != savedChangeCount, !canAnnotate || !canChangePages {
+        if hasUnsavedChanges, !canAnnotate || !canChangePages {
             throw DocumentProtectionError.restricted
         }
+        saveToken += 1
         autosaveTask?.cancel()
-        self.fileRevision = try withNativeNotesRestored {
-            try SafePDFFileStore.save(document, to: fileURL, expectedRevision: fileRevision, repairingButtons: buttonWidgetStates())
+        let buttons = buttonWidgetStates()
+        let pageCount = document.pageCount
+        let restore = prepareNativeNotesForSave()
+        // Serialize and write on the save queue (which also waits for any
+        // in-flight autosave). The caller blocks, so ⌘S stays synchronous, but
+        // the expensive tagged-page rendering no longer runs on the main thread.
+        let result: Result<PDFFileRevision, Error> = saveQueue.sync {
+            guard let data = document.dataRepresentation() else {
+                return .failure(SafePDFFileStoreError.unableToWriteTemporary)
+            }
+            do {
+                return .success(try SafePDFFileStore.save(data: data, to: fileURL, expectedRevision: fileRevision,
+                                                          pageCount: pageCount, repairingButtons: buttons))
+            } catch {
+                return .failure(error)
+            }
         }
+        restore()
+        let revision = try result.get()
+        self.fileRevision = revision
         savedChangeCount = changeCount
         hasUnsavedChanges = false
     }

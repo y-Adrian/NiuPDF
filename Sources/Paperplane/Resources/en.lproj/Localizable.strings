@@ -133,6 +133,7 @@
 "Autosave paused: %@ Save with ⌘S once the problem is resolved." = "Autosave paused: %@ Save with ⌘S once the problem is resolved.";
 "· Autosave Paused" = "· Autosave Paused";
 "· Saved Automatically" = "· Saved Automatically";
+"· Saving…" = "· Saving…";
 "Save annotations automatically" = "Save annotations automatically";
 "Changes are written to the PDF a moment after each edit, and when you switch apps or quit." = "Changes are written to the PDF a moment after each edit, and when you switch apps or quit.";
 "NiuPDF" = "NiuPDF";

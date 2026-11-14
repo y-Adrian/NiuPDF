@@ -85,7 +85,10 @@ struct PDFCanvas: NSViewRepresentable {
             let index = document.index(for: page)
             Task { @MainActor in
                 library.updateCurrentPage(index)
-                library.pageCount = document.pageCount
+                // pageCount changes only when pages are added or removed; skip
+                // the redundant publish (and whole-window re-render) on a plain
+                // page turn.
+                if library.pageCount != document.pageCount { library.pageCount = document.pageCount }
             }
         }
 

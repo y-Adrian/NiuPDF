@@ -212,7 +212,9 @@ struct ReaderWindow: View {
             Image(systemName: "doc.text")
             Text(library.displayName)
                 .lineLimit(1)
-            if case let .paused(reason) = library.autosaveState {
+            if library.isSaving {
+                Text(L("· Saving…"))
+            } else if case let .paused(reason) = library.autosaveState {
                 Text(L("· Autosave Paused"))
                     .foregroundStyle(.orange)
                     .help(reason)

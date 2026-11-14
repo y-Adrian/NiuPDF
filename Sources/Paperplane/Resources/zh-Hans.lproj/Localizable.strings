@@ -133,6 +133,7 @@
 "Autosave paused: %@ Save with ⌘S once the problem is resolved." = "自动存储已暂停：%@ 问题解决后可用 ⌘S 存储。";
 "· Autosave Paused" = "· 自动存储已暂停";
 "· Saved Automatically" = "· 已自动存储";
+"· Saving…" = "· 保存中…";
 "Save annotations automatically" = "自动存储批注";
 "Changes are written to the PDF a moment after each edit, and when you switch apps or quit." = "每次修改后稍候、切换到其他应用或退出时，自动把更改写入 PDF。";
 "NiuPDF" = "牛PDF";
