@@ -1127,13 +1127,32 @@ private enum ThumbnailCache {
         }
     }
 
-    private static let images = NSCache<PDFPage, Entry>()
+    /// Caps decoded thumbnail pixels (RGBA bytes) held across all open
+    /// documents, so scrolling a large image-heavy PDF cannot grow memory
+    /// without bound.
+    private static let costLimit = 80_000_000
+
+    private static let images: NSCache<PDFPage, Entry> = {
+        let cache = NSCache<PDFPage, Entry>()
+        cache.totalCostLimit = costLimit
+        cache.countLimit = 500
+        return cache
+    }()
 
     static func image(for page: PDFPage, revision: Int) -> NSImage {
         if let entry = images.object(forKey: page), entry.revision == revision { return entry.image }
         let image = PageMark.thumbnail(of: page, size: CGSize(width: 150, height: 190), for: .mediaBox)
-        images.setObject(Entry(image: image, revision: revision), forKey: page)
+        images.setObject(Entry(image: image, revision: revision), forKey: page, cost: cost(of: image))
         return image
+    }
+
+    /// The approximate memory footprint of a thumbnail, in RGBA bytes.
+    private static func cost(of image: NSImage) -> Int {
+        var rect = NSRect(origin: .zero, size: image.size)
+        if let cg = image.cgImage(forProposedRect: &rect, context: nil, hints: nil) {
+            return cg.width * cg.height * 4
+        }
+        return max(1, Int(image.size.width * image.size.height * 16))
     }
 }
 
