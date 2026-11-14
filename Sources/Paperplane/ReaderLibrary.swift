@@ -1724,23 +1724,29 @@ final class ReaderLibrary: ObservableObject {
         let buttons = buttonWidgetStates()
         let pageCount = document.pageCount
         let expectedRevision = fileRevision
-        // Toggle annotations to native form on the main thread, then serialize
-        // and write off the main thread; restore on the main thread after.
+        // Toggle annotations to native form, snapshot a deep copy, and restore,
+        // all on the main thread. The copy is serialized off-thread so the live
+        // document (used by the PDF view) is never touched concurrently, which
+        // would otherwise hang PDFKit's serialization.
         let restore = prepareNativeNotesForSave()
+        let snapshot = document.copy() as? PDFDocument
+        restore()
+        guard let snapshot else {
+            failAutosave(SafePDFFileStoreError.unreadablePDF)
+            return
+        }
         isSavingInBackground = true
         isSaving = true
         saveQueue.async { [weak self] in
             do {
-                guard let data = document.dataRepresentation() else { throw SafePDFFileStoreError.unableToWriteTemporary }
+                guard let data = snapshot.dataRepresentation() else { throw SafePDFFileStoreError.unableToWriteTemporary }
                 let revision = try SafePDFFileStore.save(data: data, to: fileURL, expectedRevision: expectedRevision,
                                                          pageCount: pageCount, repairingButtons: buttons)
                 DispatchQueue.main.async {
-                    restore()
                     self?.finishAutosave(revision: revision, writtenChangeCount: writtenChangeCount, token: token)
                 }
             } catch {
                 DispatchQueue.main.async {
-                    restore()
                     self?.failAutosave(error)
                 }
             }
@@ -2190,12 +2196,16 @@ final class ReaderLibrary: ObservableObject {
         autosaveTask?.cancel()
         let buttons = buttonWidgetStates()
         let pageCount = document.pageCount
+        // Toggle, snapshot and restore on the main thread; serialize the copy on
+        // the save queue (which also waits for any in-flight autosave). The
+        // caller blocks, so ⌘S stays synchronous, but the live document is not
+        // serialized off-thread.
         let restore = prepareNativeNotesForSave()
-        // Serialize and write on the save queue (which also waits for any
-        // in-flight autosave). The caller blocks, so ⌘S stays synchronous, but
-        // the expensive tagged-page rendering no longer runs on the main thread.
+        let snapshot = document.copy() as? PDFDocument
+        restore()
+        guard let snapshot else { throw SafePDFFileStoreError.unreadablePDF }
         let result: Result<PDFFileRevision, Error> = saveQueue.sync {
-            guard let data = document.dataRepresentation() else {
+            guard let data = snapshot.dataRepresentation() else {
                 return .failure(SafePDFFileStoreError.unableToWriteTemporary)
             }
             do {
@@ -2205,7 +2215,6 @@ final class ReaderLibrary: ObservableObject {
                 return .failure(error)
             }
         }
-        restore()
         let revision = try result.get()
         self.fileRevision = revision
         savedChangeCount = changeCount

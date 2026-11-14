@@ -657,7 +657,7 @@ struct ThumbnailSidebar: View {
                 LazyVStack(spacing: 0) {
                     ForEach(Array(pages.enumerated()), id: \.element) { index, page in
                         row(index: index, page: page)
-                            .id(index)
+                            .id(page)
                     }
                     insertionLine(visible: dropIndex == pages.count)
                 }
@@ -667,14 +667,15 @@ struct ThumbnailSidebar: View {
             .background(Color(nsColor: .controlBackgroundColor))
             .onPreferenceChange(RowHeightKey.self) { rowHeights = $0 }
             .onChange(of: library.currentPageIndex) { value in
+                guard let page = document.page(at: value) else { return }
                 // A direct navigation animates the sidebar to the new page;
                 // scroll-driven page changes follow instantly, so fast continuous
                 // scrolling no longer restarts a 0.18s animation on every crossing.
                 if library.animatesSidebarReveal {
                     library.animatesSidebarReveal = false
-                    withAnimation(.easeInOut(duration: 0.18)) { proxy.scrollTo(value, anchor: .center) }
+                    withAnimation(.easeInOut(duration: 0.18)) { proxy.scrollTo(page, anchor: .center) }
                 } else {
-                    proxy.scrollTo(value, anchor: .center)
+                    proxy.scrollTo(page, anchor: .center)
                 }
             }
         }
@@ -1151,6 +1152,12 @@ private func thumbnail(for page: PDFPage, selected: Bool, revision: Int) -> some
     }
     .frame(maxWidth: 142, maxHeight: 176)
     .background(.white)
+    .overlay {
+        // A hairline outline so a blank (all-white) page is still visible
+        // against the sidebar background and can be clicked.
+        Rectangle()
+            .strokeBorder(Color(nsColor: .separatorColor), lineWidth: 1)
+    }
     .shadow(color: .black.opacity(0.14), radius: 3, y: 1)
     .padding(5)
     .background(selected ? Color.accentColor.opacity(0.14) : .clear, in: RoundedRectangle(cornerRadius: 8))
