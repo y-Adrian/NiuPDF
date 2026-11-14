@@ -449,13 +449,6 @@ final class ReaderLibrary: ObservableObject {
         autosaveTask?.cancel()
         autosaveState = nil
         annotationRevision += 1
-        // PDFKit builds its own note badges when it first lays out a page, before
-        // any overlay exists, so hand every page's notes over before display.
-        // Scanning a 501-page file takes about 30 ms.
-        for index in 0..<opened.document.pageCount {
-            if let page = opened.document.page(at: index) { prepareNotes(on: page) }
-        }
-        refreshPageMarks(in: opened.document)
         document = opened.document
         fileURL = url
         // The annotation tools stay closed while the file forbids annotations.
@@ -476,7 +469,25 @@ final class ReaderLibrary: ObservableObject {
         errorMessage = nil
         loadBookmarks()
         AppModel.shared.noteOpened(url)
+        // Hand notes over to the overlay and renumbers page marks, yielding
+        // between batches so opening a very large document stays responsive.
+        preparePages(of: opened.document)
         Logger.opening.info("Opened \(url.lastPathComponent, privacy: .public) (\(opened.document.pageCount) pages) in window \(self.window?.windowNumber ?? -1); window visible: \(self.window?.isVisible ?? false)")
+    }
+
+    /// Hands every page's notes over to the overlay and renumbers page marks,
+    /// yielding between batches so opening a very large document does not block
+    /// the interface for a noticeable moment.
+    private func preparePages(of document: PDFDocument) {
+        let pageCount = document.pageCount
+        Task { @MainActor [weak self] in
+            guard let self else { return }
+            for index in 0..<pageCount {
+                if let page = document.page(at: index) { self.prepareNotes(on: page) }
+                if index % 100 == 99 { await Task.yield() }
+            }
+            self.refreshPageMarks(in: document)
+        }
     }
 
     /// Unlocks an encrypted PDF with its saved or entered password; false when the user cancels.
@@ -790,6 +801,13 @@ final class ReaderLibrary: ObservableObject {
         case apply
     }
 
+    /// What a character-based markup edit did.
+    private enum MarkupResult {
+        case created(PDFAnnotation)
+        case erased
+        case failed
+    }
+
     /// Marks the selection with a markup tool in its current color, or
     /// removes that markup where the selection already has it.
     func toggleMarkup(_ tool: AnnotationTool, in selection: PDFSelection) {
@@ -810,16 +828,41 @@ final class ReaderLibrary: ObservableObject {
         recordAnnotationEdit(tool.title, pages: selection.pages) {
             for page in selection.pages {
                 let characters = MarkupEngine.characters(of: selection, on: page)
-                if characters.isEmpty {
-                    // Text whose character ranges cannot be mapped (for example
-                    // text inside tables) is marked by its visual bounds.
+                // For text laid out in columns or tables, the drag selection's
+                // character ranges can map to different text than the selection
+                // shows. Only trust the character ranges when they round-trip to
+                // the selected text; otherwise mark by visual bounds.
+                let result = charactersMapToSelection(characters, selection, on: page)
+                    ? markCharacters(tool, color: styled, characters: characters, on: page, intent: intent)
+                    : .failed
+                if case .failed = result {
                     markSelectionByBounds(tool, color: styled, selection: selection, on: page)
-                } else {
-                    markCharacters(tool, color: styled, characters: characters, on: page, intent: intent)
                 }
             }
         }
         pdfView?.clearSelection()
+    }
+
+    /// True when the character ranges, read back from `page.string`, reproduce
+    /// the selection's text (ignoring whitespace). False for table or columnar
+    /// text whose character ranges do not round-trip.
+    private func charactersMapToSelection(_ characters: IndexSet, _ selection: PDFSelection, on page: PDFPage) -> Bool {
+        guard !characters.isEmpty, let text = page.string as NSString? else { return false }
+        var mapped = ""
+        for range in characters.rangeView {
+            guard range.lowerBound < text.length, range.upperBound <= text.length else { return false }
+            mapped += text.substring(with: NSRange(location: range.lowerBound, length: range.upperBound - range.lowerBound))
+        }
+        return normalized(mapped) == normalized(selection.string ?? "")
+    }
+
+    /// Removes whitespace and newlines so two pieces of text can be compared
+    /// without caring how the selection or the page text breaks them up.
+    private func normalized(_ text: String) -> String {
+        text.unicodeScalars
+            .filter { !CharacterSet.whitespacesAndNewlines.contains($0) }
+            .map(String.init)
+            .joined()
     }
 
     /// Marks a selection whose character ranges are unavailable by its visual
@@ -838,8 +881,7 @@ final class ReaderLibrary: ObservableObject {
         return annotation
     }
 
-    /// Applies one markup edit on one page and returns the annotation that now
-    /// covers the characters, or nil when the edit erased markup.
+    /// Applies one markup edit on one page and reports what it did.
     @discardableResult
     private func markCharacters(
         _ tool: AnnotationTool,
@@ -847,9 +889,9 @@ final class ReaderLibrary: ObservableObject {
         characters: IndexSet,
         on page: PDFPage,
         intent: MarkupIntent
-    ) -> PDFAnnotation? {
+    ) -> MarkupResult {
         let wanted = MarkupEngine.visibleCharacters(characters, on: page)
-        guard !wanted.isEmpty else { return nil }
+        guard !wanted.isEmpty else { return .failed }
         let overlapping = page.annotations
             .filter { MarkupEngine.tool(of: $0) == tool }
             .map { ($0, MarkupEngine.characters(of: $0, on: page)) }
@@ -872,7 +914,7 @@ final class ReaderLibrary: ObservableObject {
                     if index == 0 { storeNote(note(of: annotation), for: piece) }
                 }
             }
-            return nil
+            return .erased
         }
 
         // Merge the selection and every overlapping markup of this type into one
@@ -882,13 +924,13 @@ final class ReaderLibrary: ObservableObject {
             .filter { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
         for (annotation, _) in overlapping { page.removeAnnotation(annotation) }
         guard let merged = MarkupEngine.makeAnnotation(tool: tool, color: color, characters: characters.union(covered), on: page) else {
-            return nil
+            return .failed
         }
         Self.stampOpacity(of: merged)
         page.addAnnotation(merged)
         if tool == .squiggly { handOverToOverlay(merged) }
         storeNote(notes.joined(separator: "\n\n"), for: merged)
-        return merged
+        return .created(merged)
     }
 
     /// Markup of any type under the selection, highlights first, then those with a note.
@@ -946,7 +988,9 @@ final class ReaderLibrary: ObservableObject {
         let characters = MarkupEngine.characters(of: selection, on: page)
         var created: PDFAnnotation?
         let edit = captureAnnotationEdit(pages: [page]) {
-            created = markCharacters(.highlight, color: styledColor(for: .highlight), characters: characters, on: page, intent: .apply)
+            if case .created(let annotation) = markCharacters(.highlight, color: styledColor(for: .highlight), characters: characters, on: page, intent: .apply) {
+                created = annotation
+            }
         }
         guard let created else {
             edit.revert()

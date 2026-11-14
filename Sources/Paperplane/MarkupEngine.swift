@@ -131,11 +131,18 @@ enum MarkupEngine {
 
     /// The visual rectangles of a selection's lines, skipping empty lines.
     private static func lineRects(of selection: PDFSelection, on page: PDFPage) -> [CGRect] {
-        selection.selectionsByLine().compactMap { line in
+        let lines = selection.selectionsByLine().compactMap { line -> CGRect? in
             guard !(line.string ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return nil }
             let rect = line.bounds(for: page)
             return (!rect.isNull && !rect.isEmpty) ? rect : nil
         }
+        if lines.isEmpty {
+            // Some text (for example table cells) yields a null per-line rect;
+            // fall back to the whole selection's bounds.
+            let rect = selection.bounds(for: page)
+            return (!rect.isNull && !rect.isEmpty) ? [rect] : []
+        }
+        return lines
     }
 
     /// Builds the annotation for `lines`, recording `characters` when known so
