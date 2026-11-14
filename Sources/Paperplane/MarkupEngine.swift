@@ -113,12 +113,39 @@ enum MarkupEngine {
         var lines: [CGRect] = []
         for range in characters.rangeView {
             guard let selection = page.selection(for: NSRange(location: range.lowerBound, length: range.count)) else { continue }
-            for line in selection.selectionsByLine() {
-                guard !(line.string ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { continue }
-                let rect = line.bounds(for: page)
-                if !rect.isNull, !rect.isEmpty { lines.append(rect) }
-            }
+            lines.append(contentsOf: lineRects(of: selection, on: page))
         }
+        return buildAnnotation(tool: tool, color: color, lines: lines, characters: characters)
+    }
+
+    /// Builds markup from a selection's visual lines, for selections whose
+    /// character ranges cannot be mapped back (for example text inside tables).
+    static func makeAnnotation(
+        tool: AnnotationTool,
+        color: NSColor,
+        selection: PDFSelection,
+        on page: PDFPage
+    ) -> PDFAnnotation? {
+        buildAnnotation(tool: tool, color: color, lines: lineRects(of: selection, on: page), characters: nil)
+    }
+
+    /// The visual rectangles of a selection's lines, skipping empty lines.
+    private static func lineRects(of selection: PDFSelection, on page: PDFPage) -> [CGRect] {
+        selection.selectionsByLine().compactMap { line in
+            guard !(line.string ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return nil }
+            let rect = line.bounds(for: page)
+            return (!rect.isNull && !rect.isEmpty) ? rect : nil
+        }
+    }
+
+    /// Builds the annotation for `lines`, recording `characters` when known so
+    /// overlapping markup can be merged or partly erased later.
+    private static func buildAnnotation(
+        tool: AnnotationTool,
+        color: NSColor,
+        lines: [CGRect],
+        characters: IndexSet?
+    ) -> PDFAnnotation? {
         guard let first = lines.first else { return nil }
         let bounds = lines.dropFirst().reduce(first) { $0.union($1) }
 
@@ -146,10 +173,12 @@ enum MarkupEngine {
             ]
         }
         annotation.color = color
-        annotation.setValue(
-            characters.rangeView.map { "\($0.lowerBound):\($0.count)" }.joined(separator: " "),
-            forAnnotationKey: rangesKey
-        )
+        if let characters {
+            annotation.setValue(
+                characters.rangeView.map { "\($0.lowerBound):\($0.count)" }.joined(separator: " "),
+                forAnnotationKey: rangesKey
+            )
+        }
         return annotation
     }
 

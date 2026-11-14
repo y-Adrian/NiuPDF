@@ -348,6 +348,9 @@ final class ReaderLibrary: ObservableObject {
     private var scopedURL: URL?
     private var fileRevision: PDFFileRevision?
     private var pendingRestoredZoomScale: CGFloat?
+    /// True when the document has no remembered zoom, so it should fit the
+    /// page to the width once the view is laid out.
+    private var pendingFitWidth = false
     /// The open password just written, so the reopened file can be checked as a reader.
     private var pendingReaderPassword: String?
     private var observers: [NSObjectProtocol] = []
@@ -396,6 +399,10 @@ final class ReaderLibrary: ObservableObject {
         ReadingPositions.flush()
         scopedURL?.stopAccessingSecurityScopedResource()
         scopedURL = nil
+        // Forget the file so AppModel.library(showing:) no longer reports this
+        // closed window as still having the document open.
+        document = nil
+        fileURL = nil
     }
 
     /// Opens a file in this window, replacing its document. Each file comes
@@ -458,7 +465,7 @@ final class ReaderLibrary: ObservableObject {
         let remembered = ReadingPositions.position(for: url)
         currentPageIndex = min(max(remembered?.page ?? 0, 0), max(opened.document.pageCount - 1, 0))
         pendingRestoredZoomScale = remembered?.zoom
-        if pendingRestoredZoomScale == nil { pdfView?.autoScales = true }
+        pendingFitWidth = pendingRestoredZoomScale == nil
         searchText = ""
         searchResults = []
         searchResultIndex = 0
@@ -667,11 +674,21 @@ final class ReaderLibrary: ObservableObject {
     }
 
     func applyPendingRestoredZoom(to view: PDFView) {
-        guard let scale = pendingRestoredZoomScale else { return }
-        view.autoScales = false
-        view.scaleFactor = min(max(scale, view.minScaleFactor), view.maxScaleFactor)
-        pendingRestoredZoomScale = nil
-        updateZoomScale(view.scaleFactor)
+        if let scale = pendingRestoredZoomScale {
+            view.autoScales = false
+            view.scaleFactor = min(max(scale, view.minScaleFactor), view.maxScaleFactor)
+            pendingRestoredZoomScale = nil
+            updateZoomScale(view.scaleFactor)
+        } else if pendingFitWidth {
+            pendingFitWidth = false
+            // Fit the page to the width once the view has a usable size; retry
+            // on the next pass if the window has not finished laying out yet.
+            if view.bounds.width > 0 {
+                fitWidth()
+            } else {
+                DispatchQueue.main.async { [weak self] in self?.fitWidth() }
+            }
+        }
     }
 
     func applyLayout(to view: PDFView) {
@@ -792,10 +809,33 @@ final class ReaderLibrary: ObservableObject {
         let styled = color.nsColor.withAlphaComponent(opacity(for: tool))
         recordAnnotationEdit(tool.title, pages: selection.pages) {
             for page in selection.pages {
-                markCharacters(tool, color: styled, characters: MarkupEngine.characters(of: selection, on: page), on: page, intent: intent)
+                let characters = MarkupEngine.characters(of: selection, on: page)
+                if characters.isEmpty {
+                    // Text whose character ranges cannot be mapped (for example
+                    // text inside tables) is marked by its visual bounds.
+                    markSelectionByBounds(tool, color: styled, selection: selection, on: page)
+                } else {
+                    markCharacters(tool, color: styled, characters: characters, on: page, intent: intent)
+                }
             }
         }
         pdfView?.clearSelection()
+    }
+
+    /// Marks a selection whose character ranges are unavailable by its visual
+    /// bounds; such markup cannot be merged or partly erased by character.
+    @discardableResult
+    private func markSelectionByBounds(
+        _ tool: AnnotationTool,
+        color: NSColor,
+        selection: PDFSelection,
+        on page: PDFPage
+    ) -> PDFAnnotation? {
+        guard let annotation = MarkupEngine.makeAnnotation(tool: tool, color: color, selection: selection, on: page) else { return nil }
+        Self.stampOpacity(of: annotation)
+        page.addAnnotation(annotation)
+        if tool == .squiggly { handOverToOverlay(annotation) }
+        return annotation
     }
 
     /// Applies one markup edit on one page and returns the annotation that now
